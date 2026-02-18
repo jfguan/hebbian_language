@@ -20,24 +20,13 @@ def cosine_lr(step, warmup, total, max_lr, min_lr):
     return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * t))
 
 
-def detach(x):
-    """Recursively detach all tensors to break autograd graph."""
-    if isinstance(x, torch.Tensor):
-        return x.detach()
-    if isinstance(x, dict):
-        return {k: detach(v) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return type(x)(detach(v) for v in x)
-    return x
-
-
 @torch.no_grad()
 def evaluate(model, loader, device, steps=10):
     model.eval()
     total = 0.0
     for _ in range(steps):
         x, y = loader.batch()
-        _, loss, _ = model(x.to(device), y.to(device))
+        _, loss = model(x.to(device), y.to(device))
         total += loss.item()
     model.train()
     return total / steps
@@ -50,7 +39,10 @@ def sample(model, decode, device, n=200, temperature=0.8):
     states, tokens = None, []
     for _ in range(n):
         logits, states = model.step(token, states=states)
-        states = [detach(s) for s in states]
+        states = [
+            {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in s.items()}
+            for s in states
+        ]
         token = torch.multinomial(
             torch.softmax(logits / temperature, dim=-1), 1
         ).squeeze(-1)
@@ -77,13 +69,11 @@ def plot_losses(history, tag):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-memory", action="store_true")
-    p.add_argument("--no-resets", action="store_true")
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--steps", type=int, default=1000)
     p.add_argument("--schedule-steps", type=int, default=2000)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--seq-len", type=int, default=2048)
-    p.add_argument("--chunk-size", type=int, default=256)
     p.add_argument("--lr", type=float, default=6e-4)
     p.add_argument("--eval-interval", type=int, default=100)
     p.add_argument("--n-layers", type=int, default=8)
@@ -93,8 +83,7 @@ def main():
     args = p.parse_args()
 
     use_memory = not args.no_memory
-    use_resets = not args.no_resets
-    tag = args.tag or f"mem{int(use_memory)}_reset{int(use_resets)}"
+    tag = args.tag or f"mem{int(use_memory)}"
     device = (
         "mps"
         if torch.backends.mps.is_available()
@@ -133,7 +122,7 @@ def main():
     min_lr = args.lr * 0.1
     T = args.seq_len
     print(
-        f"{n_params / 1e6:.1f}M params | memory={use_memory} resets={use_resets} | {device}"
+        f"{n_params / 1e6:.1f}M params | memory={use_memory} | {device}"
     )
     print(
         f"Steps {start_step} -> {total_steps} | B={args.batch_size} T={T} lr={args.lr}"
@@ -152,20 +141,7 @@ def main():
             x, y = train_loader.batch()
             x, y = x.to(device), y.to(device)
 
-            if use_resets:
-                chunk_size = args.chunk_size
-                mems = None
-                total_loss = 0.0
-                for start in range(0, T, chunk_size):
-                    end = min(start + chunk_size, T)
-                    _, chunk_loss, mems = model(
-                        x[:, start:end], y[:, start:end], memories=mems
-                    )
-                    mems = detach(mems)  # truncate BPTT to this chunk
-                    total_loss = total_loss + chunk_loss * (end - start)
-                loss = total_loss / T
-            else:
-                _, loss, _ = model(x, y)
+            _, loss = model(x, y)
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()

@@ -40,10 +40,9 @@ class HebbianMambaLayer(nn.Module):
             self.proj_read = nn.Linear(D, D, bias=False)
             self.decay = nn.Parameter(torch.tensor(4.6))   # σ(4.6) ≈ 0.99
 
-    def _memory_attend(self, out, W):
-        """Parallel form: reads = (M ⊙ KKᵀ)V where M is causal decay mask."""
+    def _memory_attend(self, out):
+        """Parallel form: reads = (M ⊙ (rk·wk^T)) · v where M is causal decay mask."""
         B, T, D = out.shape
-        device = out.device
         log_gamma = torch.sigmoid(self.decay).log()
 
         v = self.proj_write(out)                        # write values
@@ -51,34 +50,19 @@ class HebbianMambaLayer(nn.Module):
         rk = out                                         # read keys (current)
 
         # Causal decay: M[t,s] = γ^(t-1-s) · 𝟙[s<t]
-        pos = torch.arange(T, device=device)
+        pos = torch.arange(T, device=out.device)
         diffs = (pos[:, None] - 1 - pos[None, :]).clamp(min=0)
         M = torch.exp(diffs * log_gamma) * (pos[:, None] > pos[None, :])
 
-        # Read: query with current output, match against write keys
         reads = torch.bmm(torch.bmm(rk, wk.transpose(-1, -2)) * M, v)
+        return out + 0.03 * self.proj_read(reads)
 
-        # Carried-over W contribution
-        if W is not None:
-            carry = torch.einsum("bij,btj->bti", W, rk)
-            reads = reads + carry * torch.exp(pos * log_gamma)[None, :, None]
-
-        out = out + 0.03 * self.proj_read(reads)
-
-        # W for next chunk: W_T = Σ_t γ^(T-1-t) v_t ⊗ wk_t + γ^T W_0
-        w = torch.exp(torch.arange(T - 1, -1, -1, device=device) * log_gamma)
-        W_new = torch.einsum("t,btd,bte->bde", w, v, wk)
-        if W is not None:
-            W_new = W_new + torch.exp(T * log_gamma) * W
-
-        return out, W_new
-
-    def forward(self, x, memory=None):
+    def forward(self, x):
         residual = x
         out = self.mamba(self.norm(x))
         if self.use_memory:
-            out, memory = self._memory_attend(out, memory)
-        return residual + out, memory
+            out = self._memory_attend(out)
+        return residual + out
 
     def step(self, x, state=None):
         """Recurrent form: W ← γW + v⊗wk, read = W·out."""
@@ -120,17 +104,15 @@ class HebbianMamba(nn.Module):
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
         self.embedding.weight = self.lm_head.weight
 
-    def forward(self, input_ids, targets=None, memories=None):
+    def forward(self, input_ids, targets=None):
         x = self.embedding(input_ids)
-        new_mems = []
-        for i, layer in enumerate(self.layers):
-            x, mem = layer(x, memory=memories[i] if memories else None)
-            new_mems.append(mem)
+        for layer in self.layers:
+            x = layer(x)
         logits = self.lm_head(self.norm(x))
         loss = None
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
-        return logits, loss, new_mems
+        return logits, loss
 
     def step(self, token, states=None):
         x = self.embedding(token)
