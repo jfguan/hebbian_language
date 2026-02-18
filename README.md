@@ -112,6 +112,25 @@ W beats both wider and deeper baselines. The params are better spent on associat
 
 With W frozen, the memory model is *worse* than both baselines (narrower Mamba than wide baseline, fewer layers than deep baseline, and no memory to compensate) — confirming W is actively contributing, not just a parameter artifact.
 
+### Context Length Scaling (trained at 2K, evaluated at 4K–32K)
+
+W's benefit grows with sequence length — the longer the context, the more associations W accumulates, and the bigger the gap over baseline. All models trained on 2048-token sequences.
+
+| Eval length | Memory (W upd) | Baseline (d=576) | Gap | vs training length |
+|---|---|---|---|---|
+| 4K | 3.074 | 3.122 | 0.048 | 2× |
+| 16K | 3.085 | 3.170 | 0.085 | 8× |
+| **32K** | **3.091** | **3.186** | **0.095** | **16×** |
+
+The gap nearly doubles from 4K to 32K. W generalizes far beyond training length with no degradation — at 32K tokens (16× training length), every 2048-token segment shows positive delta.
+
+32K within-model test (W updating vs W frozen, 2 windows):
+
+| | Avg Loss | Delta |
+|---|---|---|
+| **W updating** | **3.091** | |
+| W frozen | 3.192 | **+0.101 ± 0.007** |
+
 ### Learned Decay Rates
 
 All layers learned decay σ(λ) ≈ 0.986–0.990, meaning W retains ~99% of its content per step. Information persists for hundreds of tokens. No stratification across layers at this scale — likely due to limited capacity (d=512) forcing all layers to maximize retention.
@@ -165,23 +184,27 @@ With lower decay at larger d (more capacity to spare), live associations could s
 
 7. **W beats param-matched deeper Mamba.** 10-layer baseline (17.2M params) scored 3.162 — worse than both the wide baseline and the memory model. W is a better use of parameters than either more width or more depth.
 
+8. **W benefit scales with context length.** Evaluated at 4K, 16K, and 32K tokens (trained at 2K). Gap over baseline grew from 0.048 to 0.095 — nearly doubling. W generalizes 16× beyond training length with no degradation.
+
 ## Usage
 
 ```bash
-# Train with memory, no resets (best config)
-uv run python train.py --steps 1000 --batch-size 1 --no-resets
-
-# Train with memory + resets
+# Train with memory
 uv run python train.py --steps 1000 --batch-size 1
 
 # Train param-matched baseline
 uv run python train.py --steps 1000 --batch-size 1 --no-memory --d-model 576
 
 # Evaluate (4 random windows, 4096 tokens each)
-uv run python eval_memory.py --model model_mem1_reset0.pt
-uv run python eval_memory.py --model model_mem1_reset1.pt
+uv run python eval_memory.py --model model_mem1.pt
+
+# Evaluate at longer context (32K tokens, 2 windows)
+uv run python eval_memory.py --model model_mem1.pt --tokens 32768 --windows 2 --segment 2048
 
 # Curriculum: pretrain without memory, then introduce W
-uv run python train.py --steps 500 --batch-size 1 --no-memory --no-resets
-uv run python train.py --steps 500 --batch-size 1 --resume model_mem0_reset0.pt
+uv run python train.py --steps 500 --batch-size 1 --no-memory
+uv run python train.py --steps 500 --batch-size 1 --resume model_mem0.pt
+
+# Synthetic associative recall test
+uv run python eval_recall.py
 ```

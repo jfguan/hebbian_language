@@ -71,21 +71,23 @@ class HebbianMambaLayer(nn.Module):
 
         if state is None:
             cache = (None, x.new_zeros(B, self.d_inner, self.d_conv - 1))
-            W = x.new_zeros(B, self.d_model, self.d_model) if self.use_memory else None
-            r_prev = x.new_zeros(B, self.d_model) if self.use_memory else None
         else:
-            cache, W, r_prev = state["cache"], state["memory"], state["r_prev"]
+            cache = state["cache"]
 
         out, cache = self.mamba.step(self.norm(x), cache)
 
-        if self.use_memory:
-            gamma = torch.sigmoid(self.decay)
-            read = torch.einsum("bij,bj->bi", W, out)
-            W = gamma * W + torch.einsum("bi,bj->bij", self.proj_write(out), r_prev)
-            r_prev = out
-            out = out + 0.03 * self.proj_read(read)
+        if not self.use_memory:
+            return residual + out, {"cache": cache}
 
-        return residual + out, {"cache": cache, "memory": W, "r_prev": r_prev}
+        W = state["memory"] if state else x.new_zeros(B, self.d_model, self.d_model)
+        r_prev = state["r_prev"] if state else x.new_zeros(B, self.d_model)
+
+        gamma = torch.sigmoid(self.decay)
+        read = torch.einsum("bij,bj->bi", W, out)
+        W = gamma * W + torch.einsum("bi,bj->bij", self.proj_write(out), r_prev)
+        out = out + 0.03 * self.proj_read(read)
+
+        return residual + out, {"cache": cache, "memory": W, "r_prev": out}
 
 
 class HebbianMamba(nn.Module):
