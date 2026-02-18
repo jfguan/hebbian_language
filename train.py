@@ -89,11 +89,12 @@ def main():
     p.add_argument("--n-layers", type=int, default=8)
     p.add_argument("--d-model", type=int, default=512)
     p.add_argument("--d-state", type=int, default=16)
+    p.add_argument("--tag", type=str, default=None)
     args = p.parse_args()
 
     use_memory = not args.no_memory
     use_resets = not args.no_resets
-    tag = f"mem{int(use_memory)}_reset{int(use_resets)}"
+    tag = args.tag or f"mem{int(use_memory)}_reset{int(use_resets)}"
     device = (
         "mps"
         if torch.backends.mps.is_available()
