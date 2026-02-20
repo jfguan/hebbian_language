@@ -135,7 +135,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--tokens", type=int, default=4096)
     p.add_argument("--windows", type=int, default=4)
-    p.add_argument("--model", type=str, default="model_mem1_reset1.pt")
+    p.add_argument("--model", type=str, default="checkpoints/model_mem1.pt")
     p.add_argument("--segment", type=int, default=512)
     args = p.parse_args()
 
@@ -192,7 +192,7 @@ def main():
         e = min(s + seg, N)
         print(f"{s:>5}-{e:<5}  {mean_upd[si]:>10.4f}  {mean_frz[si]:>10.4f}  {mean_delta[si]:>+10.4f}  {stderr_delta[si]:>8.4f}")
 
-    plot_results(last_w_norms, last_loss_upd, last_loss_frz, "eval_memory.png")
+    plot_results(last_w_norms, last_loss_upd, last_loss_frz, "eval_memory/eval_memory.png")
 
 
 if __name__ == "__main__":

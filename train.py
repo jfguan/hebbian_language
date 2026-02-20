@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import os
 import time
 
 import matplotlib
@@ -78,7 +79,7 @@ def plot_losses(history, tag):
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    fig.savefig(f"loss_{tag}.png", dpi=150)
+    fig.savefig(f"checkpoints/loss_{tag}.png", dpi=150)
     plt.close(fig)
 
 
@@ -155,7 +156,8 @@ def main():
         f"Steps {start_step} -> {total_steps} | B={args.batch_size}x{grad_accum} T={T} lr={args.lr}"
     )
 
-    log_path = f"history_{tag}.jsonl"
+    os.makedirs("checkpoints", exist_ok=True)
+    log_path = f"checkpoints/history_{tag}.jsonl"
     log_file = open(log_path, "a" if args.resume else "w")
 
     try:
@@ -195,8 +197,8 @@ def main():
                 raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
                 torch.save({"model": raw_model.state_dict(), "optimizer": optimizer.state_dict(),
                             "config": cfg, "step": step},
-                           f"ckpt_{tag}_step{step}.pt")
-                print(f"  -> ckpt_{tag}_step{step}.pt", flush=True)
+                           f"checkpoints/ckpt_{tag}_step{step}.pt")
+                print(f"  -> checkpoints/ckpt_{tag}_step{step}.pt", flush=True)
 
             log_file.write(json.dumps(entry) + "\n")
             log_file.flush()
@@ -220,11 +222,11 @@ def main():
             "config": cfg,
             "step": step + 1,
         },
-        f"model_{tag}.pt",
+        f"checkpoints/model_{tag}.pt",
     )
     history = [json.loads(line) for line in open(log_path)]
     plot_losses(history, tag)
-    print(f"Saved model_{tag}.pt + {log_path}")
+    print(f"Saved checkpoints/model_{tag}.pt + {log_path}")
 
 
 if __name__ == "__main__":
