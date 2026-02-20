@@ -99,18 +99,29 @@ Key findings:
 
 ### Memory vs Param-Matched Baselines (no resets, clean comparison)
 
-All models trained identically on full 2048-token sequences. No tricks, no chunking. Two baselines: wider Mamba (d=576, 8 layers) and deeper Mamba (d=512, 10 layers), both param-matched to the memory model.
+All models trained identically: B=2, T=2048, 1465 steps (~6M tokens), bf16, cosine LR decay. Two baselines: wider Mamba (d=576, 8 layers) and deeper Mamba (d=512, 10 layers), both param-matched to the memory model.
 
-| Model | Params | Avg Loss | PPL |
+| Model | Params | Val Loss | PPL |
 |---|---|---|---|
-| **Memory (W updating, d=512, 8 layers)** | **18.0M** | **3.074** | **~21.6** |
-| Baseline wide (no memory, d=576, 8 layers) | 17.4M | 3.122 | ~22.7 |
-| Baseline deep (no memory, d=512, 10 layers) | 17.2M | 3.162 | ~23.6 |
-| Memory (W frozen, d=512, 8 layers) | 18.0M | 3.177 | ~24.0 |
+| **Memory (W updating, d=512, 8 layers)** | **18.0M** | **2.477** | **11.91** |
+| Baseline deep (no memory, d=512, 10 layers) | 17.2M | 2.527 | 12.51 |
+| Baseline wide (no memory, d=576, 8 layers) | 17.4M | 2.589 | 13.32 |
 
-W beats both wider and deeper baselines. The params are better spent on associative memory than on either more width or more depth.
+Gap at 2048 tokens: **+0.050 nats over deep, +0.112 nats over wide**.
 
-With W frozen, the memory model is *worse* than both baselines (narrower Mamba than wide baseline, fewer layers than deep baseline, and no memory to compensate) — confirming W is actively contributing, not just a parameter artifact.
+W beats both wider and deeper baselines. The params are better spent on associative memory than on either more width or more depth. Memory is also ~500ms faster per step than both baselines (fewer Mamba layers, dense BMMs instead of scatter-based pscan).
+
+### Long-Context Scaling (trained at 2K, evaluated at 16K)
+
+8 random val windows of 16K tokens each. Memory advantage grows with position as W accumulates associations.
+
+| Model | Val Loss (16K) |
+|---|---|
+| **Memory (d=512, 8 layers)** | **2.4818** |
+| Wide (d=576, 8 layers) | 2.5003 |
+| Deep (d=512, 10 layers) | 2.5094 |
+
+Gap at 16K: **+0.019 vs wide, +0.028 vs deep** (averaged over all windows including cold start). Content-dependent: windows with rich long-range structure show gaps of 0.04–0.07; locally-coherent text shows near-zero gap. Memory advantage is concentrated in harder, more associative content.
 
 ### Context Length Scaling (trained at 2K, evaluated at 4K–32K)
 
