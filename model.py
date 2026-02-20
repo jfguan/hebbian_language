@@ -43,19 +43,22 @@ class HebbianMambaLayer(nn.Module):
     def _memory_attend(self, out):
         """Parallel form: reads = (M ⊙ (rk·wk^T)) · v where M is causal decay mask."""
         B, T, D = out.shape
+        # Upcast to float32 — bf16 backward overflows without scaling
+        out32 = out.float()
         log_gamma = torch.sigmoid(self.decay).log()
 
-        v = self.proj_write(out)                        # write values
-        wk = F.pad(out[:, :-1], (0, 0, 1, 0))          # write keys (shifted)
-        rk = out                                         # read keys (current)
+        v = self.proj_write(out32)                      # write values
+        wk = F.pad(out32[:, :-1], (0, 0, 1, 0))        # write keys (shifted)
+        rk = out32                                       # read keys (current)
 
         # Causal decay: M[t,s] = γ^(t-1-s) · 𝟙[s<t]
         pos = torch.arange(T, device=out.device)
         diffs = (pos[:, None] - 1 - pos[None, :]).clamp(min=0)
         M = torch.exp(diffs * log_gamma) * (pos[:, None] > pos[None, :])
 
-        reads = torch.bmm(torch.bmm(rk, wk.transpose(-1, -2)) * M, v)
-        return out + 0.03 * self.proj_read(reads)
+        scores = torch.bmm(rk, wk.transpose(-1, -2)) * M
+        reads = torch.bmm(scores, v)
+        return out + 0.03 * self.proj_read(reads).to(out.dtype)
 
     def forward(self, x):
         residual = x

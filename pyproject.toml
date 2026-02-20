@@ -8,6 +8,7 @@ dependencies = [
     "mambapy>=1.2.0",
     "matplotlib>=3.10.8",
     "datasets>=2.14",
+    "mlx>=0.30.6",
 ]
 
 [build-system]

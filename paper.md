@@ -45,6 +45,13 @@ Simple 32-line mechanism → works on synthetic recall → beats param-matched b
 - Show gap holds or grows with more training
 - Both models trained on identical data
 
+### 4b. Dual-Timescale Memory [TODO]
+- Two parallel D×D matrices per layer: W_fast (γ≈0.99) and W_slow (γ≈0.999); reads summed
+- Both matrices write the same associations; different decays give different effective context windows
+- Hypothesis: W_fast handles recent context, W_slow handles long-range — complementary, not redundant
+- Cost: doubles memory parameters (2D² vs D² per layer), negligible vs attention KV-cache
+- Eval on capacity curve + context length scaling to measure whether each timescale specializes
+
 ### 5. Code Dataset [TODO]
 - Add code corpus (e.g. The Stack subset or similar)
 - Train memory + baseline from scratch on code

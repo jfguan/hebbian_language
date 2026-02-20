@@ -86,12 +86,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-memory", action="store_true")
     p.add_argument("--resume", type=str, default=None)
-    p.add_argument("--steps", type=int, default=1000)
-    p.add_argument("--schedule-steps", type=int, default=2000)
-    p.add_argument("--batch-size", type=int, default=4)
+    p.add_argument("--steps", type=int, default=1465)
+    p.add_argument("--schedule-steps", type=int, default=1465)
+    p.add_argument("--batch-size", type=int, default=2)
     p.add_argument("--seq-len", type=int, default=2048)
     p.add_argument("--lr", type=float, default=6e-4)
     p.add_argument("--eval-interval", type=int, default=100)
+    p.add_argument("--ckpt-interval", type=int, default=500)
     p.add_argument("--n-layers", type=int, default=8)
     p.add_argument("--d-model", type=int, default=512)
     p.add_argument("--d-state", type=int, default=16)
@@ -189,6 +190,13 @@ def main():
                 vl = evaluate(model, val_loader, device)
                 entry["val_loss"] = vl
                 print(f"  val loss {vl:.4f} | val ppl {math.exp(vl):.2f}", flush=True)
+
+            if step > 0 and step % args.ckpt_interval == 0:
+                raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
+                torch.save({"model": raw_model.state_dict(), "optimizer": optimizer.state_dict(),
+                            "config": cfg, "step": step},
+                           f"ckpt_{tag}_step{step}.pt")
+                print(f"  -> ckpt_{tag}_step{step}.pt", flush=True)
 
             log_file.write(json.dumps(entry) + "\n")
             log_file.flush()
