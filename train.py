@@ -10,7 +10,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 
-from data import DataLoader, load_dataset
 from model import Config, HebbianMamba
 
 
@@ -85,7 +84,9 @@ def plot_losses(history, tag):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--dataset", type=str, default="pg19", choices=["pg19", "code"])
     p.add_argument("--no-memory", action="store_true")
+    p.add_argument("--dual-memory", action="store_true")
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--steps", type=int, default=1465)
     p.add_argument("--schedule-steps", type=int, default=1465)
@@ -103,7 +104,12 @@ def main():
     args = p.parse_args()
 
     use_memory = not args.no_memory
-    tag = args.tag or f"mem{int(use_memory)}"
+    dual_memory = args.dual_memory
+    dataset_prefix = "code_" if args.dataset == "code" else ""
+    tag = args.tag or (
+        f"{dataset_prefix}mem{int(use_memory)}_dual" if dual_memory
+        else f"{dataset_prefix}mem{int(use_memory)}"
+    )
     device = (
         "mps"
         if torch.backends.mps.is_available()
@@ -117,11 +123,15 @@ def main():
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
+    if args.dataset == "code":
+        from data_code import load_dataset, DataLoader
+    else:
+        from data import load_dataset, DataLoader
     ds = load_dataset()
     train_loader = DataLoader(ds["train"], args.batch_size, args.seq_len)
     val_loader = DataLoader(ds["val"], args.batch_size, args.seq_len)
 
-    cfg = Config(vocab_size=ds["vocab_size"], use_memory=use_memory, d_model=args.d_model, n_layers=args.n_layers, d_state=args.d_state)
+    cfg = Config(vocab_size=ds["vocab_size"], use_memory=use_memory, dual_memory=dual_memory, d_model=args.d_model, n_layers=args.n_layers, d_state=args.d_state)
     model = HebbianMamba(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters())
 

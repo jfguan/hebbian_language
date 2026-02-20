@@ -21,6 +21,7 @@ class Config:
     expand: int = 2
     n_layers: int = 8
     use_memory: bool = True
+    dual_memory: bool = False  # second W matrix with slower decay
 
 
 class HebbianMambaLayer(nn.Module):
@@ -35,10 +36,13 @@ class HebbianMambaLayer(nn.Module):
         self.norm = RMSNorm(D)
         self.mamba = MambaBlock(mcfg)
 
+        self.dual_memory = cfg.dual_memory
         if self.use_memory:
             self.proj_write = nn.Linear(D, D, bias=False)
             self.proj_read = nn.Linear(D, D, bias=False)
             self.decay = nn.Parameter(torch.tensor(4.6))   # σ(4.6) ≈ 0.99
+            if self.dual_memory:
+                self.decay_slow = nn.Parameter(torch.tensor(6.9))  # σ(6.9) ≈ 0.999
 
     def _memory_attend(self, out):
         """Parallel form: reads = (M ⊙ (rk·wk^T)) · v where M is causal decay mask."""
@@ -54,10 +58,15 @@ class HebbianMambaLayer(nn.Module):
         # Causal decay: M[t,s] = γ^(t-1-s) · 𝟙[s<t]
         pos = torch.arange(T, device=out.device)
         diffs = (pos[:, None] - 1 - pos[None, :]).clamp(min=0)
-        M = torch.exp(diffs * log_gamma) * (pos[:, None] > pos[None, :])
+        causal = (pos[:, None] > pos[None, :])
+        M = torch.exp(diffs * log_gamma) * causal
 
-        scores = torch.bmm(rk, wk.transpose(-1, -2)) * M
-        reads = torch.bmm(scores, v)
+        scores = torch.bmm(rk, wk.transpose(-1, -2))
+        reads = torch.bmm(scores * M, v)
+        if self.dual_memory:
+            log_gamma_slow = torch.sigmoid(self.decay_slow).log()
+            M_slow = torch.exp(diffs * log_gamma_slow) * causal
+            reads = reads + torch.bmm(scores * M_slow, v)
         return out + 0.03 * self.proj_read(reads).to(out.dtype)
 
     def forward(self, x):
@@ -87,11 +96,22 @@ class HebbianMambaLayer(nn.Module):
 
         gamma = torch.sigmoid(self.decay)
         raw_out = out
+        write = torch.einsum("bi,bj->bij", self.proj_write(out), r_prev)
         read = torch.einsum("bij,bj->bi", W, out)
-        W = gamma * W + torch.einsum("bi,bj->bij", self.proj_write(out), r_prev)
+        W = gamma * W + write
+
+        if self.dual_memory:
+            W_slow = state["memory_slow"] if state else x.new_zeros(B, self.d_model, self.d_model)
+            gamma_slow = torch.sigmoid(self.decay_slow)
+            read = read + torch.einsum("bij,bj->bi", W_slow, out)
+            W_slow = gamma_slow * W_slow + write
+
         out = out + 0.03 * self.proj_read(read)
 
-        return residual + out, {"cache": cache, "memory": W, "r_prev": raw_out}
+        new_state = {"cache": cache, "memory": W, "r_prev": raw_out}
+        if self.dual_memory:
+            new_state["memory_slow"] = W_slow
+        return residual + out, new_state
 
 
 class HebbianMamba(nn.Module):
