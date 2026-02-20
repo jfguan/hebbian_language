@@ -14,7 +14,7 @@ Transformers have lossless KV-cache memory within the context window. A lossy me
 
 Let r_t be the residual-stream vector after Mamba's recurrent update.
 
-**Read:** $\text{read}_t = W \cdot r_{t-1}$
+**Read:** $\text{read}_t = W \cdot r_t$
 
 **Write:** $W \leftarrow \sigma(\lambda) \cdot W + \text{proj}_{\text{write}}(r_t) \cdot r_{t-1}^\top$
 

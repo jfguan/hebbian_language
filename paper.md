@@ -10,6 +10,26 @@ Simple 32-line mechanism → works on synthetic recall → beats param-matched b
 - Proves W carries associations across Mamba state resets
 - Baseline: no memory, same architecture
 
+### 1b. Memory Capacity Curve [DONE]
+- Train on 32 KV pairs (d_model=128, 4 layers), eval at [4, 8, 16, 32, 64, 128, 256]
+- 256 unique keys, 16 unique values, Mamba state reset between store and query phases
+- Results (recall accuracy):
+
+| Pairs | Accuracy | vs chance (6.2%) |
+|-------|----------|------------------|
+| 4     | 100.0%   | 16× chance        |
+| 8     | 100.0%   | 16× chance        |
+| 16    | 100.0%   | 16× chance        |
+| 32    | 99.8%    | 16× chance        |
+| 64    | 96.0%    | 15× chance        |
+| 128   | 55.7%    | 9× chance         |
+| 256   | 18.8%    | 3× chance         |
+
+- Perfect recall up to 32 pairs (training distribution), 96% at 64 (2× training count)
+- Naive theory predicts SNR ≈ √(d/k) ≈ 1.4 at k=64 — should give ~50-70% with random keys. Getting 96% means learned projections structure keys to reduce interference beyond the random-key bound.
+- 4 layers with independent W matrices appear to distribute associations: 18.8% at 256 pairs = ~48 correct, or ~12 per layer — well within single-matrix capacity. A single-layer model should show the cliff much earlier.
+- Chart: eval_recall/capacity.png
+
 ### 2. Param-Matched Baselines at 18M [DONE]
 - Memory (d=512, 8 layers, 18M) vs wide baseline (d=576, 8 layers, 17.4M) vs deep baseline (d=512, 10 layers, 17.2M)
 - Memory wins both: 3.074 vs 3.122 (wide) vs 3.162 (deep)
@@ -39,6 +59,7 @@ Simple 32-line mechanism → works on synthetic recall → beats param-matched b
 
 ## Figures
 1. Synthetic recall accuracy (memory vs no-memory)
+1b. Memory capacity curve (recall vs number of KV pairs, d=128)
 2. Loss comparison table: memory vs wide vs deep baselines
 3. Context length scaling plot (gap vs eval length)
 4. Training compute curve (gap vs steps)

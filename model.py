@@ -83,11 +83,12 @@ class HebbianMambaLayer(nn.Module):
         r_prev = state["r_prev"] if state else x.new_zeros(B, self.d_model)
 
         gamma = torch.sigmoid(self.decay)
+        raw_out = out
         read = torch.einsum("bij,bj->bi", W, out)
         W = gamma * W + torch.einsum("bi,bj->bij", self.proj_write(out), r_prev)
         out = out + 0.03 * self.proj_read(read)
 
-        return residual + out, {"cache": cache, "memory": W, "r_prev": out}
+        return residual + out, {"cache": cache, "memory": W, "r_prev": raw_out}
 
 
 class HebbianMamba(nn.Module):

@@ -88,7 +88,7 @@ class BPETokenizer:
         return tok
 
 
-TRAIN_CHARS_TARGET = 10_000_000  # ~10M chars of train text
+TRAIN_CHARS_TARGET = 15_000_000  # ~15M chars → ~6M tokens with BPE
 VAL_CHARS_TARGET = 1_000_000     # ~1M chars of val text
 
 
