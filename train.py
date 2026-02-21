@@ -116,8 +116,9 @@ def main():
     dual_memory = args.dual_memory
     dataset_prefix = "code_" if args.dataset == "code" else ""
     tag = args.tag or (
-        f"{dataset_prefix}mem{int(use_memory)}_dual" if dual_memory
-        else f"{dataset_prefix}mem{int(use_memory)}"
+        f"{dataset_prefix}memory_dual" if dual_memory
+        else f"{dataset_prefix}memory" if use_memory
+        else f"{dataset_prefix}no_memory"
     )
     device = (
         "mps"
