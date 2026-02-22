@@ -129,7 +129,8 @@ Simple 32-line mechanism → works on synthetic recall → beats param-matched b
   - 5.5× fewer parameters, 2.7× fewer training tokens
   - Both severely undertrained; result holds at current scale
 - Memory model at 100M still to train
-- W capacity at d=1024: 1M slots (4× more than 18M model), SNR improves from 2.3 to 3.2
+- W capacity scales linearly with d: ~d orthogonal associations per layer. d=1024 gives 2× capacity per layer vs d=512, plus 12 vs 8 layers → ~3× total capacity at 100M vs 18M
+- SNR ≈ √(d/k): improves from √(512/k) to √(1024/k), a √2 improvement per layer
 
 ## Figures
 1. Synthetic recall accuracy (memory vs no-memory)

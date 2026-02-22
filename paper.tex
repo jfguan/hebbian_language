@@ -48,7 +48,7 @@ This update rule is a linear recurrence in $W$, admitting a parallel scan formul
 Transformers have lossless KV-cache memory within the context window --- $W$ has no gap to fill. Mamba's lossy recurrent state creates that gap; the mechanisms are complementary: Mamba handles local context efficiently, $W$ handles long-range associations persistently.
 
 \paragraph{Why code.}
-Code is almost entirely associative recall: every identifier is defined once and referenced many times. A Mamba baseline must track all variable bindings through $d_\text{state} = 16$ recurrent dimensions; $W$ stores them directly in a $d \times d$ matrix with $O(\sqrt{d})$ effective capacity scaling.
+Code is almost entirely associative recall: every identifier is defined once and referenced many times. A Mamba baseline must track all variable bindings through $d_\text{state} = 16$ recurrent dimensions; $W$ stores them directly in a $d \times d$ matrix with capacity for ${\sim}d$ orthogonal associations per layer, growing as $O(\sqrt{N})$ in model parameters $N$ since $d \propto \sqrt{N}$.
 
 \paragraph{Contributions.}
 \begin{itemize}
@@ -288,5 +288,111 @@ Overall  & 1.912 & 2.658 & $+$0.746 \\
 \end{table}
 
 The per-segment gap grows from $+$0.447 at 0--1K to $+$1.067 at 7--8K as $W$ accumulates file-level associations. Identifiers referenced late in a file were bound early; $W$ retrieves them directly while the baseline must retain all bindings through its recurrent state.
+
+\section{Related Work}
+
+\paragraph{Fast weights.}
+The closest prior work is \citet{ba2016using}, who augment an RNN with a fast weight matrix updated by outer products of hidden states: $W_t = \lambda W_{t-1} + \eta\, h_t h_t^\top$, with retrieval via iterative inner-loop steps. \citet{schmidhuber1992learning} proposed fast-weight memories earlier in a metalearning context. Our $W$ follows the same outer-product-plus-decay principle but makes three changes that are critical in practice: (1) decoupling write and read keys via learned projections --- necessary for correct retrieval after Mamba state resets, as shown in Section~\ref{sec:recall}; (2) using a fixed injection scale $\alpha$ rather than a learned gate, preventing memory noise from destabilizing early training; and (3) admitting a parallel scan formulation (Section~\ref{sec:method}) that makes training as efficient as Mamba itself, unlike Ba et al.'s sequential inner-loop retrieval. Trained end-to-end with a standard language modeling objective and no special procedure, this decades-old idea produces large gains on modern language benchmarks.
+
+\paragraph{External and associative memory.}
+Neural Turing Machines \citep{graves2014neural} and Differentiable Neural Computers \citep{graves2016hybrid} maintain an external memory bank with learned content-based read and write heads. Our $W$ is simpler: a single $d \times d$ matrix updated by a fixed rule rather than a large addressable bank with learned attention weights. This trades capacity for constant per-step cost and trivial implementation. Modern Hopfield Networks \citep{ramsauer2021hopfield} show that softmax attention computes energy-minimizing retrievals in a Hopfield associative memory. Our $W$ implements an unnormalized causal variant: no softmax normalization, strict causal masking, and separate projections for write and read. These mechanisms are specific to SSMs: in a Transformer, the KV cache already provides lossless associative recall within the context window, leaving no gap for an additional memory matrix.
+
+\paragraph{Memory in SSMs.}
+Test-Time Training \citep[TTT;][]{sun2024learning} is an RNN-like model whose hidden state is a weight matrix updated by gradient descent on a self-supervised loss at each step. Titans \citep{behrouz2024titans} combine a similar gradient-based neural memory module with sliding-window attention in a hybrid transformer. Both learn the update rule via backpropagation through an inner-loop optimization, incurring additional per-step cost. Our $W$ uses a fixed outer-product rule with no inner loop: $O(d^2)$ per step, purely feedforward, requiring no modification to training. We find this suffices to produce a 0.94-nat gap over a parameter-matched baseline on Python code.
+
+\paragraph{Linear recurrences and the delta rule.}
+RetNet \citep{sun2023retentive}, RWKV \citep{peng2023rwkv}, and Gated Linear Attention \citep{yang2023gated} reformulate causal attention as a linear recurrence, achieving $O(1)$ state per step. \citet{schlag2021linear} make the connection explicit: linear attention is equivalent to a fast-weight programmer using Hebbian outer-product writes. DeltaNet \citep{yang2024deltanet} replaces the outer product with the error-corrective delta rule: $W_t \leftarrow W_{t-1} + \beta_t(v_t - W_{t-1}k_t)k_t^\top$, actively removing stale associations before writing new ones, which reduces interference more directly than exponential decay. Our update is the simpler pure-Hebbian variant with learned decay, applied additively to Mamba rather than as a replacement for attention. Mamba handles short-range selective compression; $W$ handles long-range associative recall.
+
+\section{Conclusion}
+
+The contribution is combining existing pieces on a suitable problem. SSMs have a lossy state bottleneck; code is associative recall. A Hebbian matrix $W$ fills the gap directly, at constant memory cost and with no modification to the training objective.
+
+The results are larger than expected. An 18M-parameter memory model reaches a validation loss of 1.848 nats on Python code versus 2.787 for a parameter-matched baseline ($+$0.939 nats), surpassing the baseline's final performance by step 200 of 1465. Scaling to 100M parameters, the memory model consistently leads the 100M baseline throughout training. The gap grows with context length as $W$ accumulates associations at test time. On prose the effect is smaller but consistent (2.477 vs.\ 2.527 for the deep baseline), suggesting the mechanism is broadly useful and especially powerful when the data is highly associative.
+
+\paragraph{Limitations.}
+$W$'s two projection matrices add roughly 25\% to parameter count per layer, comparable to adding extra Mamba layers --- but buy a qualitatively different capability those layers cannot provide. The real constraints are associative capacity (~$d$ orthogonal associations per layer) and the single scalar decay per layer, which cannot differentiate retention by content or recency beyond a fixed exponential. We have only evaluated on Mamba; transfer to other SSMs is straightforward but untested.
+
+\paragraph{Future directions.}
+Immediate: longer training sequences (gradient signal for longer-range associations), larger models (capacity scales with $d$), and harder datasets (multi-document QA, repositories spanning multiple files). A secondary $W$ with slower decay could capture a different timescale of association, with benefit expected to emerge at higher task difficulty. Continual learning is a natural setting: $W$ already implements online associative updates without gradient descent. Further: learnable or input-dependent $\alpha$, per-layer decay specialization (which our experiments hint at), and whether $W$ can be stored and updated in bf16 or lower precision without capacity loss. Image and video sequences are a natural fit: Vision Mamba processes patches in a fixed scan order and requires multiple passes to capture spatial associations between distant patches --- $W$ could short-circuit this by binding patch identities as they are first encountered. Video is even more directly associative, with objects, faces, and scenes appearing, disappearing, and reappearing across frames; $W$ could maintain entity identity across cuts without relying on the recurrent state to carry it.
+
+\begin{thebibliography}{10}
+
+\bibitem{ba2016using}
+Jimmy Ba, Geoffrey Hinton, Volodymyr Mnih, Joel~Z. Leibo, and Catalin Ionescu.
+\newblock Using fast weights to attend to the recent past.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2016.
+
+\bibitem{behrouz2024titans}
+Ali Behrouz, Peilin Zhong, and Vahab Mirrokni.
+\newblock Titans: Learning to memorize at test time.
+\newblock \emph{arXiv preprint arXiv:2501.00663}, 2025.
+
+\bibitem{graves2014neural}
+Alex Graves, Greg Wayne, and Ivo Danihelka.
+\newblock Neural turing machines.
+\newblock \emph{arXiv preprint arXiv:1410.5401}, 2014.
+
+\bibitem{graves2016hybrid}
+Alex Graves, Greg Wayne, Malcolm Reynolds, Tim Harley, Ivo Danihelka,
+  Agnieszka Grabska-Barwi{\'n}ska, Sergio~G{\'o}mez Colmenarejo, Edward
+  Grefenstette, Tiago Ramalho, John Agapiou, et~al.
+\newblock Hybrid computing using a neural network with dynamic external memory.
+\newblock \emph{Nature}, 538(7626):471--476, 2016.
+
+\bibitem{gu2023mamba}
+Albert Gu and Tri Dao.
+\newblock Mamba: Linear-time sequence modeling with selective state spaces.
+\newblock \emph{arXiv preprint arXiv:2312.00752}, 2023.
+
+\bibitem{peng2023rwkv}
+Bo~Peng, Eric Alcaide, Quentin Anthony, Alon Albalak, Samuel Arcadinho,
+  Huanqi Cao, Xin Cheng, Michael Chung, Matteo Grella, Kranthi~Kiran~GV,
+  et~al.
+\newblock {RWKV}: Reinventing {RNN}s for the transformer era.
+\newblock In \emph{Findings of EMNLP}, 2023.
+
+\bibitem{ramsauer2021hopfield}
+Hubert Ramsauer, Bernhard Sch{\"a}fl, Johannes Lehner, Philipp Seidl, Michael
+  Widrich, Thomas Adler, Lukas Gruber, Markus Holzleitner, Milena Pavlovic,
+  Geir~Kjetil Stormo, et~al.
+\newblock Hopfield networks is all you need.
+\newblock In \emph{International Conference on Learning Representations}, 2021.
+
+\bibitem{schmidhuber1992learning}
+J{\"u}rgen Schmidhuber.
+\newblock Learning to control fast-weight memories: An alternative to recurrent
+  nets.
+\newblock \emph{Neural Computation}, 4(1):131--139, 1992.
+
+\bibitem{sun2023retentive}
+Yutao Sun, Li~Dong, Shaohan Huang, Shuming Ma, Yuqing Xia, Jilong Xue,
+  Jianyong Wang, and Furu Wei.
+\newblock Retentive network: A successor to transformer for large language
+  models.
+\newblock \emph{arXiv preprint arXiv:2307.08621}, 2023.
+
+\bibitem{sun2024learning}
+Yu~Sun, Xinhao Li, Karan Dalal, Jiarui Xu, Arjun Aghajanyan, Gregory~W.
+  Wornell, Xinlei Chen, and Mike Lewis.
+\newblock Learning to (learn at test time): {RNN}s with expressive hidden
+  states.
+\newblock \emph{arXiv preprint arXiv:2407.04620}, 2024.
+
+\bibitem{yang2023gated}
+Songlin Yang, Bailin Wang, Yikang Shen, Rameswar Panda, and Yoon Kim.
+\newblock Gated linear attention transformers with hardware-efficient training.
+\newblock \emph{arXiv preprint arXiv:2312.06635}, 2023.
+
+\bibitem{yang2024deltanet}
+Songlin Yang, Bailin Wang, Yu~Zhang, Yikang Shen, and Yoon Kim.
+\newblock Parallelizing linear transformers with the delta rule over sequence length.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2024.
+
+\bibitem{schlag2021linear}
+Imanol Schlag, Kazuki Irie, and J{\"u}rgen Schmidhuber.
+\newblock Linear transformers are secretly fast weight programmers.
+\newblock In \emph{International Conference on Machine Learning}, 2021.
+
+\end{thebibliography}
 
 \end{document}

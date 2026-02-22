@@ -173,6 +173,10 @@ With lower decay at larger d (more capacity to spare), live associations could s
 
 **4. Training data amount / steps.** Current model may be undertrained (1000 steps). More training won't change the fundamental scaling question but could widen the gap if W's projections haven't fully converged.
 
+## Ideas / Future Work
+
+**Loss-weighted replay.** If a training batch has unusually high loss, perform a second gradient step on the same batch (with updated weights) before moving on. Related to Online Hard Example Mining (OHEM) and prioritized experience replay in RL. The intuition: hard batches contain the most informative signal, so extra gradient steps on them could accelerate learning. Risk: overfitting to hard batches, which may be hard due to noise rather than genuine difficulty. Unclear whether this helps for LM pretraining — most evidence comes from vision/RL domains. Worth a small ablation (e.g., repeat any batch with loss > 1.5× rolling mean).
+
 ## Risks
 
 1. **Interference.** Rank-1 updates with a single scalar decay may cause catastrophic forgetting as W accumulates. Mitigated by scaling d.
