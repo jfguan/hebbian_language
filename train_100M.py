@@ -140,10 +140,11 @@ def main():
 
     raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
     vl = evaluate(model, val_loader, device)
-    log_file.write(json.dumps({"step": step, "train_loss": entry["train_loss"], "val_loss": vl}) + "\n")
+    log_file.write(json.dumps({"step": step, "train_loss": entry["train_loss"], "val_loss": vl, "tokens": tokens_seen}) + "\n")
     log_file.close()
     print(f"\nFinal val loss: {vl:.4f} | ppl {__import__('math').exp(vl):.2f}")
-    print(f"Sample:\n{sample(raw_model, ds['encode'], ds['decode'], device, prompt='def fizzbuzz(n):\\n', n=300)}")
+    fizzbuzz_prompt = 'def fizzbuzz(n):\n    """Print numbers 1 to n. For multiples of 3 print Fizz, multiples of 5 print Buzz, multiples of both print FizzBuzz."""\n'
+    print(f"Sample:\n{sample(raw_model, ds['encode'], ds['decode'], device, prompt=fizzbuzz_prompt, n=300)}")
 
     torch.save(
         {"model": raw_model.state_dict(), "optimizer": optimizer.state_dict(), "config": cfg, "step": step + 1},
