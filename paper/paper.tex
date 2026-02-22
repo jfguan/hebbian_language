@@ -29,7 +29,7 @@
 
 We augment each Mamba layer with a Hebbian associative memory $W \in \mathbb{R}^{d \times d}$ that accumulates outer-product associations between past context states and their successors under exponential decay, injecting retrieved content additively into the residual stream. The update costs $O(d^2)$ memory independent of sequence length, adds 32 lines of code, leaves the training objective unchanged, and admits a chunkwise parallel form analogous to Mamba's own recurrence.
 
-On Python code the effect is large: an 18M-parameter memory model leads a parameter-matched baseline by 0.94 nats after 6M training tokens, surpassing the baseline's final validation loss after only 800K tokens, and at 16K-token evaluation windows the advantage exceeds 1.0 nats as $W$ accumulates file-level associations. The benefit scales with model size: at 100M parameters the memory model leads at every checkpoint (best-checkpoint gap $+$0.307 nats, narrowed from $+$0.939 at 18M as the stronger baseline closes headroom), and the 18M memory model outperforms the 100M baseline throughout its training curve. On PG-19 prose the gain is smaller but consistent (0.05--0.11 nats). The advantage grows with data richness: on a multilingual code corpus (8 languages, The Stack) the 16K long-context gap reaches $+$0.639 nats. We conjecture the mechanism transfers to other SSMs and to image and video sequences, where long-range entity persistence is similarly associative.
+On Python code the effect is large: an 18M-parameter memory model leads a parameter-matched baseline by 0.939 nats after 6M training tokens, surpassing the baseline's final validation loss after only 800K tokens, and at 16K-token evaluation windows the advantage peaks above 1.0 nats around 7--8K tokens as $W$ accumulates file-level associations. The benefit scales with model size: at 100M parameters the memory model leads at every checkpoint (best-checkpoint gap $+$0.307 nats, narrowed from $+$0.939 at 18M as the stronger baseline closes headroom), and the 18M memory model outperforms the 100M baseline throughout its training curve. On PG-19 prose the gain is smaller but consistent (0.05--0.11 nats). The advantage grows with data richness: on a multilingual code corpus (8 languages, The Stack) the 16K long-context gap reaches $+$0.639 nats. We conjecture the mechanism transfers to other SSMs and to image and video sequences, where long-range entity persistence is similarly associative.
 \end{abstract}
 
 \section{Introduction}
@@ -59,7 +59,7 @@ Code is heavily associative: function names, class definitions, imported modules
 \paragraph{Contributions.}
 \begin{itemize}
     \item A minimal Hebbian memory mechanism for SSMs: one matrix, one decay, one outer product per step, trained end-to-end with no auxiliary objectives.
-    \item Strong gains on code at 18M parameters: $+$0.94 nats over a parameter-matched baseline on Python after 6M tokens (surpassing its final validation loss after only ${\sim}$800K tokens); $+$0.05--0.11 nats on prose (PG-19). The 18M memory model outperforms the 100M parameter-matched baseline throughout its training run.
+    \item Strong gains on code at 18M parameters: $+$0.939 nats over a parameter-matched baseline on Python after 6M tokens (surpassing its final validation loss after only ${\sim}$800K tokens); $+$0.05--0.11 nats on prose (PG-19). The 18M memory model outperforms the 100M deep baseline throughout its training run.
     \item Gains persist at 100M parameters across two code corpora: $+$0.307 nats on Python; $+$0.639 nats at 16K tokens on multilingual code (The Stack, 8 languages), the largest gap we observe.
     \item Evidence that the benefit persists along three axes: \emph{sequence length} (gap holds across the full 16K eval window, $8\times$ training length, peaking around 7--8K); \emph{dataset complexity} (larger on multilingual Stack than single-language Python); \emph{model size} (narrows at 100M as the stronger baseline closes headroom, but remains substantial).
 \end{itemize}
@@ -86,7 +86,7 @@ Unrolling the recurrence, reads across a sequence can be expressed as:
 \begin{equation}
     \text{reads} = (M \odot S)\, V
 \end{equation}
-where $S[t,s] = r_t^\top r_{s-1}$ is the similarity matrix, $M[t,s] = \gamma^{t-1-s} \cdot \mathbf{1}[s < t]$ is a causal exponential decay mask, and $V[s] = \text{proj}_\text{write}(r_s)$. The entry $S[t,s]$ asks ``where in the past did I see a context like mine?''\ and retrieves what followed. In the \emph{chunkwise} form~\citep{yang2023gated}, the sequence is split into chunks of size $C$. Within each chunk, the intra-chunk contribution uses the quadratic form; across chunks, the running $W$ matrix is passed forward and applied in $O(Cd^2)$ per chunk. Total cost: $O(TC \cdot d + T \cdot d^2)$ time and $O(C^2 + d^2)$ memory --- linear in $T$ for fixed $C$ and $d$. At $C{=}64$, $d{=}512$, this is ${\sim}4\times$ faster than the quadratic form at $T{=}2048$ and ${\sim}28\times$ at $T{=}16384$. The recurrence is identical to RetNet/GLA with a scalar decay, so existing hardware-efficient kernels apply directly.
+where $S[t,s] = r_t^\top r_{s-1}$ is the similarity matrix, $M[t,s] = \gamma^{t-1-s} \cdot \mathbf{1}[s < t]$ is a causal exponential decay mask, and $V[s] = \text{proj}_\text{write}(r_s)$. The entry $S[t,s]$ asks ``where in the past did I see a context like mine?''\ and retrieves what followed. In the \emph{chunkwise} form~\citep{yang2023gated}, the sequence is split into chunks of size $C$. Within each chunk, the intra-chunk contribution uses the quadratic form; across chunks, the running $W$ matrix is passed forward and applied in $O(Cd^2)$ per chunk. Total cost: $O(TC \cdot d + T \cdot d^2)$ time and $O(C^2 + d^2)$ memory --- linear in $T$ for fixed $C$ and $d$. At $C{=}64$, $d{=}512$, this is ${\sim}3.5\times$ faster than the quadratic form at $T{=}2048$ and ${\sim}28\times$ at $T{=}16384$. The recurrence is identical to RetNet/GLA with a scalar decay, so existing hardware-efficient kernels apply directly.
 
 \paragraph{Recurrent form (inference).}
 $W$ is updated one step at a time at $O(d^2)$ per step and $O(d^2)$ memory, constant in sequence length. Training and inference are both linear in $T$.
@@ -94,7 +94,7 @@ $W$ is updated one step at a time at $O(d^2)$ per step and $O(d^2)$ memory, cons
 \paragraph{Parameters.}
 Each layer adds scalar $\lambda$, $\text{proj}_\text{write} \in \mathbb{R}^{d \times d}$, and $\text{proj}_\text{read} \in \mathbb{R}^{d \times d}$ --- roughly $2d^2$ parameters per layer, or ${\sim}0.5$M at $d=512$.
 
-\paragraph{Design choices:}
+\paragraph{Design choices.}
 \begin{itemize}
     \item \textit{Fixed $\alpha$}: In preliminary experiments at 3--5M parameters, a learned injection scale caused the model to ignore $W$ entirely. A fixed $\alpha$ (0.03--0.05) avoids this and was not further tuned.
     \item \textit{Separate $\text{proj}_\text{write}$ / $\text{proj}_\text{read}$}: Allows the model to learn different subspaces for writing and reading. $\text{proj}_\text{write}$ plays the role of a value projection; $\text{proj}_\text{read}$ plays the role of an output projection. Both the write key ($r_{t-1}$) and read key ($r_t$) are unprojected.
@@ -110,7 +110,7 @@ Each layer adds scalar $\lambda$, $\text{proj}_\text{write} \in \mathbb{R}^{d \t
 
 We train a small memory model ($d=128$, 4 layers) on a synthetic task: a sequence of 32 key-value pairs followed by 32 queries, where the Mamba recurrent state is reset between store and query phases so any successful recall must pass through $W$.
 
-The model achieves near-perfect recall up to the training distribution (100\% at ${\leq}16$ pairs, 99.8\% at 32) and 96\% at 64 pairs ($2\times$ training count). Without $W$, the reset Mamba state has no mechanism to carry associations, giving chance performance ($1/16 \approx 6.2\%$).
+The model achieves near-perfect recall up to the training distribution (100\% at ${\leq}16$ pairs, 99.8\% at 32) and 96\% at 64 pairs ($2\times$ training count). Without $W$, the reset Mamba state has no mechanism to carry associations, giving chance performance ($1/16 = 6.25\%$).
 
 \FloatBarrier
 \subsection{Memory Capacity}
@@ -141,7 +141,7 @@ Pairs & Accuracy \\
 \label{fig:capacity}
 \end{figure}
 
-Naive random-key theory predicts $\text{SNR} \approx \sqrt{d/k} \approx 1.4$ at $k=64$ --- retrieval quality degrades as interference from $k$ stored associations grows. The model achieves 96\%, well above this baseline, indicating learned projections structure keys to reduce interference. At 256 pairs, 18.8\% accuracy corresponds to ${\sim}$48 correct, or ${\sim}$12 per layer across 4 independent $W$ matrices --- within single-matrix capacity.
+Naive random-key theory predicts $\text{SNR} \approx \sqrt{d/k} \approx 1.4$ at $k=64$ --- retrieval quality degrades as interference from $k$ stored associations grows. The model achieves 96\%, well above this baseline, indicating learned projections structure keys to reduce interference. At 256 pairs, 19.6\% accuracy corresponds to ${\sim}$50 correct, or ${\sim}$12--13 per layer across 4 independent $W$ matrices --- within single-matrix capacity.
 
 We conjecture that at higher $d$, learned \emph{superposition} \citep{elhage2022superposition} --- packing more than $d$ near-orthogonal features into $d$ dimensions --- allows capacity to scale faster than the $\sqrt{d/k}$ random baseline. Larger $d$ provides more room to arrange keys with low cross-talk, so recall should improve with model scale beyond what the random-key bound predicts.
 
@@ -174,7 +174,7 @@ Tokens & Memory & Deep & Wide \\
 \label{fig:prose_training}
 \end{figure}
 
-Val estimates are noisy (10 random batches per checkpoint); the trend should be interpreted cautiously. All models are still improving at 6M tokens.
+Val estimates are noisy (10 random batches per checkpoint); the trend should be interpreted cautiously. All models are still improving at 6M tokens (Figure~\ref{fig:prose_training}).
 
 \FloatBarrier
 \subsubsection*{Long-context evaluation: Prose (18M)}
@@ -234,7 +234,7 @@ Tokens & Memory & Deep & Gap & PPL (Mem / Deep) \\
 \end{tabular}
 \end{table}
 
-The gap ($+$0.939 nats) is $10\times$ larger than on prose. Memory surpasses the baseline's final val loss by step 200 (${\sim}$800K tokens, 14\% of training).
+The gap ($+$0.939 nats) is ${\sim}8\times$ larger than the prose gap against the deep baseline ($+$0.112 nats). Memory surpasses the baseline's final val loss by step 200 (${\sim}$800K tokens, 14\% of training; Figure~\ref{fig:code_training}).
 
 \begin{figure}[h]
 \centering
@@ -260,7 +260,7 @@ $W$ frozen            & 2.877 & $+$0.938 \\
 \end{tabular}
 \end{table}
 
-Freezing $W$ costs 0.938 nats --- nearly equal to the full memory-vs-baseline gap of 0.939. The improvement comes from $W$, not from the extra parameters. Notably, the per-segment delta grows with context: $+$0.74 nats at 0--1K rising to $+$1.11 nats at 14--15K, confirming that $W$ accumulates associations over time rather than relying solely on immediate context.
+Freezing $W$ costs 0.938 nats --- nearly equal to the full memory-vs-baseline gap of 0.939. The improvement comes from $W$, not from the extra parameters. Notably, the per-segment delta grows with context: $+$0.74 nats at 0--1K rising to $+$1.11 nats at 14--15K (Figure~\ref{fig:w_ablation}), confirming that $W$ accumulates associations over time rather than relying solely on immediate context.
 
 \begin{figure}[h]
 \centering
@@ -330,7 +330,7 @@ Best  & \textbf{1.661} & \textbf{1.968} & $+$0.307 \\
 \end{tabular}
 \end{table}
 
-Memory leads at every checkpoint; the gap peaks at 4M tokens ($+$0.707) before closing as the stronger baseline catches up. The 18M memory model outperforms the 100M deep baseline throughout its entire run --- including its best checkpoint (1.968 vs.\ 1.848) --- at $5.6\times$ fewer parameters and $2.7\times$ fewer training tokens.
+Memory leads at every checkpoint; the gap peaks at 4M tokens ($+$0.707) before closing as the stronger baseline catches up (Figure~\ref{fig:code_training_100M}). The 18M memory model outperforms the 100M deep baseline at every checkpoint in the 100M model's training run --- including its best checkpoint (1.968 vs.\ 1.848) --- at $5.6\times$ fewer parameters and $2.7\times$ fewer training tokens.
 
 \begin{figure}[h]
 \centering
@@ -397,7 +397,7 @@ At 18M, all 8 layers converge to $\gamma \approx 0.990$--$0.993$ (windows 97--14
 \FloatBarrier
 \subsection{Dataset Breadth: Multilingual Code (The Stack)}
 
-We train 100M models on The Stack \citep{kocetkov2022stack}: eight languages (Python, JavaScript, TypeScript, Java, C, C\texttt{++}, Rust, Go), files ${\geq}32{,}000$ chars, ${\sim}$14.5M training tokens. We increase the BPE vocabulary to 1024 (from 512 used in previous experiments): a larger vocabulary provides more distinct token identities as write keys, reducing key collision in $W$ and giving the associative matrix more signal to exploit. Memory: 97.5M (11L), deep baseline: 101.1M (15L), $\alpha{=}0.04$. Both models are undertrained at 8.2M tokens; best-vs-best gap is $+$0.263 nats (1.621 vs.\ 1.884).
+We train 100M models on The Stack \citep{kocetkov2022stack}: eight languages (Python, JavaScript, TypeScript, Java, C, C\texttt{++}, Rust, Go), files ${\geq}32{,}000$ chars, ${\sim}$14.5M training tokens. We increase the BPE vocabulary to 1024 (from 512 used in previous experiments): a larger vocabulary provides more distinct token identities as write keys, reducing key collision in $W$ and giving the associative matrix more signal to exploit. Memory: 97.5M (11L), deep baseline: 101.1M (15L), $\alpha{=}0.04$. Both models are undertrained at 8.2M tokens; best-vs-best gap is $+$0.263 nats (1.621 vs.\ 1.884; Figure~\ref{fig:stack_training}).
 
 \begin{table}[h]
 \centering
@@ -459,7 +459,7 @@ Overall  & \textbf{1.453} & 2.092 & $+$0.639 \\
 \end{tabular}
 \end{table}
 
-Memory wins all 16 segments. The overall gap ($+$0.639) exceeds the Python 100M result ($+$0.424), consistent with the richer vocabulary and longer files providing denser associations for $W$. The deep baseline collapses to ${\sim}3.05$ nats on the two densest windows while memory stays at ${\sim}1.67$ nats.
+Memory wins all 16 segments. The overall gap ($+$0.639) exceeds the Python 100M result ($+$0.424), consistent with the richer vocabulary and longer files providing denser associations for $W$. On the two densest individual windows, the deep baseline's overall loss reaches ${\sim}3.05$ nats while memory stays at ${\sim}1.67$ nats (Figure~\ref{fig:long_context_stack}; these per-window averages are not visible in the per-segment table above, which averages across all 8 windows).
 
 \begin{figure}[h]
 \centering
@@ -475,7 +475,7 @@ Memory wins all 16 segments. The overall gap ($+$0.639) exceeds the Python 100M 
 The closest prior work is Ba et al.~\citep{ba2016using}, who augment an RNN with a fast weight matrix updated by outer products of hidden states: $W_t = \lambda W_{t-1} + \eta\, h_t h_t^\top$, with retrieval via iterative inner-loop steps. Schmidhuber~\citep{schmidhuber1992learning} proposed fast-weight memories earlier in a metalearning context. Our $W$ follows the same outer-product-plus-decay principle but makes three changes: (1) decoupling write and read keys via learned projections --- necessary for correct retrieval after Mamba state resets, as shown in Section~\ref{sec:recall}; (2) using a fixed injection scale $\alpha$ rather than a learned gate, preventing memory noise from destabilizing early training; and (3) admitting a parallel scan formulation (Section~\ref{sec:method}) that makes training as efficient as Mamba itself, unlike Ba et al.'s sequential inner-loop retrieval.
 
 \paragraph{External and associative memory.}
-Neural Turing Machines \citep{graves2014neural} and Differentiable Neural Computers \citep{graves2016hybrid} maintain an external memory bank with learned content-based read and write heads. Our $W$ is simpler: a single $d \times d$ matrix updated by a fixed rule, trading capacity for constant per-step cost. Modern Hopfield Networks \citep{ramsauer2021hopfield} show that softmax attention computes energy-minimizing retrievals in a Hopfield associative memory; our $W$ implements an unnormalized causal variant with strict causal masking and separate write/read projections. These mechanisms are specific to SSMs: in a Transformer, the KV cache already provides lossless associative recall within the context window, leaving no gap for an additional memory matrix.
+Neural Turing Machines \citep{graves2014neural} and Differentiable Neural Computers \citep{graves2016hybrid} maintain an external memory bank with learned content-based read and write heads. Our $W$ is simpler: a single $d \times d$ matrix updated by a fixed rule, trading capacity for constant per-step cost. Modern Hopfield Networks \citep{ramsauer2021hopfield} show that softmax attention computes energy-minimizing retrievals in a Hopfield associative memory; our $W$ implements an unnormalized causal variant with strict causal masking and separate write/read projections. These mechanisms are specific to SSMs: in a Transformer, the KV cache retains all past tokens within the context window, leaving no gap for an additional memory matrix.
 
 \paragraph{Memory in SSMs.}
 Test-Time Training \citep[TTT;][]{sun2024learning} is an RNN-like model whose hidden state is a weight matrix updated by gradient descent on a self-supervised loss at each step. Titans \citep{behrouz2024titans} combine a similar gradient-based neural memory module with sliding-window attention in a hybrid transformer. MesaNet \citep{von2025mesanet} pushes this further by solving the in-context optimization to near-optimality using conjugate gradient steps; while it supports chunkwise parallelization within chunks, the inter-chunk CG iterations are inherently sequential and do not batch efficiently across long sequences. All three learn their update rule end-to-end through an inner-loop optimization, incurring significant per-step overhead. Our $W$ uses a fixed outer-product rule with no inner loop: $O(d^2)$ per step, purely feedforward, and trivially batchable --- at the cost of a less expressive update.
@@ -485,7 +485,7 @@ RetNet \citep{sun2023retentive}, RWKV \citep{peng2023rwkv}, and Gated Linear Att
 
 \section{Conclusion}
 
-SSMs have a lossy state bottleneck; code is associative recall. A Hebbian $W$ fills the gap: drop-in (32 lines, no training changes), $O(Td^2)$ in sequence length, and compute-efficient --- the 18M memory model matches the 100M baseline at $5.6\times$ fewer parameters. The advantage persists to 16K tokens ($8\times$ training length) across all settings, while quadratic alternatives become intractable at exactly the contexts where associative recall matters most.
+SSMs have a lossy state bottleneck; code is associative recall. A Hebbian $W$ fills the gap: drop-in (32 lines, no training changes), $O(Td^2)$ in sequence length, and compute-efficient --- the 18M memory model outperforms the 100M deep baseline at $5.6\times$ fewer parameters. The advantage persists to 16K tokens ($8\times$ training length) across all settings, while quadratic alternatives become intractable at exactly the contexts where associative recall matters most.
 
 At 18M parameters, the memory model reaches 1.848 nats on Python code versus 2.787 for a parameter-matched baseline ($+$0.939 nats), surpassing the baseline's final validation loss after only 800K tokens and outperforming the 100M baseline throughout its entire training run. At 100M parameters the best-checkpoint gap is $+$0.307 nats on Python and $+$0.639 nats at 16K tokens on multilingual code (The Stack) --- the largest gap we observe. On prose the effect is smaller but consistent (2.477 vs.\ 2.527), suggesting the mechanism is broadly useful and especially powerful when data is highly associative.
 
