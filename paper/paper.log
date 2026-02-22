@@ -1,9 +1,9 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  22 FEB 2026 14:32
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  22 FEB 2026 14:33
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**paper.tex
-(./paper.tex
+**paper/paper.tex
+(./paper/paper.tex
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
 (/usr/local/texlive/2025/texmf-dist/tex/latex/base/article.cls
@@ -23,7 +23,7 @@ File: size10.clo 2024/06/29 v1.4n Standard LaTeX file (size option)
 \belowcaptionskip=\skip50
 \bibindent=\dimen141
 )
-(./neurips_2024.sty
+(paper/neurips_2024.sty
 Package: neurips_2024 2024/03/31 NeurIPS 2024 submission/camera-ready style fil
 e
 
@@ -375,7 +375,7 @@ File: l3backend-pdftex.def 2024-05-08 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count304
 \l__pdf_internal_box=\box55
 )
-(./paper.aux)
+(paper/paper.aux)
 \openout1 = `paper.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 23.
@@ -464,7 +464,7 @@ LaTeX Font Info:    ... okay on input line 23.
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
 Package hyperref Info: Link coloring OFF on input line 23.
-(./paper.out) (./paper.out)
+(paper/paper.out) (paper/paper.out)
 \@outlinefile=\write3
 \openout3 = `paper.out'.
 
@@ -687,22 +687,26 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 
 [14]
 
-[15] (./paper.aux)
+[15] (paper/paper.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
 Package rerunfilecheck Info: File `paper.out' has not changed.
 (rerunfilecheck)             Checksum: E6B9BA5AC297C136B388517DACC46448;1813.
  ) 
 Here is how much of TeX's memory you used:
- 13447 strings out of 473190
- 209079 string characters out of 5715801
- 641968 words of memory out of 5000000
+ 13448 strings out of 473190
+ 209159 string characters out of 5715801
+ 641970 words of memory out of 5000000
  36206 multiletter control sequences out of 15000+600000
  601456 words of font info for 211 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,9n,79p,1334b,580s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,9n,79p,1340b,580s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 ></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb>
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><
@@ -716,7 +720,7 @@ ocal/texlive/2025/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb></usr/loc
 al/texlive/2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive
 /2025/texmf-dist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texm
 f-dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on paper.pdf (15 pages, 802084 bytes).
+Output written on paper/paper.pdf (15 pages, 802084 bytes).
 PDF statistics:
  652 PDF objects out of 1000 (max. 8388607)
  286 compressed objects within 3 object streams
