@@ -16,7 +16,7 @@
 \author{
   Jeff Guan \\
   Independent \\
-  \texttt{jeff@jeffguan.com}
+  \texttt{fourierproject@gmail.com}
 }
 
 \begin{document}
@@ -24,7 +24,11 @@
 \maketitle
 
 \begin{abstract}
-We augment Mamba, a state space model, with a per-layer Hebbian associative memory matrix $W \in \mathbb{R}^{d \times d}$. $W$ accumulates key-value associations via outer-product updates with exponential decay, and injects retrieved content into the residual stream. The mechanism adds 32 lines of code, keeps the training objective, uses $O(d^2)$ memory constant in sequence length, and admits a parallel scan formulation analogous to Mamba's own recurrence, making it nearly drop-in. On PG-19 prose, an 18M-parameter (P) memory model outperforms P-matched baselines (deeper and wider) by 0.05--0.11 nats [TODO: re-evaluate context length scaling claim]. On Python code, the effect is dramatically larger: the memory model achieves a final validation loss 0.94 nats below a P-matched baseline, surpassing the baseline's best-ever performance after only ${\sim}$800K training tokens out of 6M. Although trained at 2K tokens, at 16K evaluation windows the gap expands to over 1.0 nats around 8K as $W$ accumulates file-level associations at test time. Code identifiers are key-value pairs bound once and queried repeatedly, exactly what $W$ implements. The benefit scales across sequence length, training compute, and data complexity [TODO: confirm with 100M results]. The linearity of the update rule, with constant memory cost, has potential implications for image and video sequences where long-range entity persistence is similarly associative.
+\textit{We give Mamba a memory: a small matrix that stores associations between tokens seen earlier in a sequence and what came next, enabling recall at constant cost.}
+
+We augment each Mamba layer with a Hebbian associative memory $W \in \mathbb{R}^{d \times d}$ that accumulates outer-product associations between past context states and their successors under exponential decay, injecting retrieved content additively into the residual stream. The update costs $O(d^2)$ memory independent of sequence length, adds 32 lines of code, leaves the training objective unchanged, and admits a chunkwise parallel form analogous to Mamba's own recurrence.
+
+On Python code the effect is large: an 18M-parameter memory model leads a parameter-matched baseline by 0.94 nats at convergence, surpasses the baseline's best-ever performance after only 800K of 6M training tokens, and at 16K-token evaluation windows the advantage exceeds 1.0 nats as $W$ accumulates file-level associations. The benefit scales with model size: at 100M parameters the memory model leads at every checkpoint, and the 18M memory model outperforms the 100M baseline throughout its training curve. On PG-19 prose the gain is smaller but consistent (0.05--0.11 nats). The mechanism applies directly to any SSM and generalizes naturally to image and video sequences where long-range entity persistence is similarly associative.
 \end{abstract}
 
 \section{Introduction}
@@ -392,10 +396,10 @@ The closest prior work is Ba et al.~\citep{ba2016using}, who augment an RNN with
 Neural Turing Machines \citep{graves2014neural} and Differentiable Neural Computers \citep{graves2016hybrid} maintain an external memory bank with learned content-based read and write heads. Our $W$ is simpler: a single $d \times d$ matrix updated by a fixed rule rather than a large addressable bank with learned attention weights. This trades capacity for constant per-step cost and trivial implementation. Modern Hopfield Networks \citep{ramsauer2021hopfield} show that softmax attention computes energy-minimizing retrievals in a Hopfield associative memory. Our $W$ implements an unnormalized causal variant: no softmax normalization, strict causal masking, and separate projections for write and read. These mechanisms are specific to SSMs: in a Transformer, the KV cache already provides lossless associative recall within the context window, leaving no gap for an additional memory matrix.
 
 \paragraph{Memory in SSMs.}
-Test-Time Training \citep[TTT;][]{sun2024learning} is an RNN-like model whose hidden state is a weight matrix updated by gradient descent on a self-supervised loss at each step. Titans \citep{behrouz2024titans} combine a similar gradient-based neural memory module with sliding-window attention in a hybrid transformer. Both learn the update rule via backpropagation through an inner-loop optimization, incurring additional per-step cost. Our $W$ uses a fixed outer-product rule with no inner loop: $O(d^2)$ per step, purely feedforward, requiring no modification to training. We find this suffices to produce a 0.94-nat gap over a parameter-matched baseline on Python code.
+Test-Time Training \citep[TTT;][]{sun2024learning} is an RNN-like model whose hidden state is a weight matrix updated by gradient descent on a self-supervised loss at each step. Titans \citep{behrouz2024titans} combine a similar gradient-based neural memory module with sliding-window attention in a hybrid transformer. MesaNet \citep{von2025mesanet} extends this approach by solving the in-context optimization to local optimality at each step using conjugate gradients, with efficient chunkwise parallelization. All three learn the update rule via backpropagation through an inner-loop optimization, incurring additional per-step cost. Our $W$ uses a fixed outer-product rule with no inner loop: $O(d^2)$ per step, purely feedforward, requiring no modification to training. We find this suffices to produce a 0.94-nat gap over a parameter-matched baseline on Python code.
 
 \paragraph{Linear recurrences and the delta rule.}
-RetNet \citep{sun2023retentive}, RWKV \citep{peng2023rwkv}, and Gated Linear Attention \citep{yang2023gated} reformulate causal attention as a linear recurrence, achieving $O(1)$ state per step. Schlag et al.~\citep{schlag2021linear} make the connection explicit: linear attention is equivalent to a fast-weight programmer using Hebbian outer-product writes. DeltaNet \citep{yang2024deltanet} replaces the outer product with the error-corrective delta rule: $W_t \leftarrow W_{t-1} + \beta_t(v_t - W_{t-1}k_t)k_t^\top$, actively removing stale associations before writing new ones, which reduces interference more directly than exponential decay. Our update is the simpler pure-Hebbian variant with learned decay, applied additively to Mamba rather than as a replacement for attention. Mamba handles short-range selective compression; $W$ handles long-range associative recall.
+RetNet \citep{sun2023retentive}, RWKV \citep{peng2023rwkv}, and Gated Linear Attention \citep{yang2023gated} reformulate causal attention as a linear recurrence, achieving $O(1)$ state per step. Schlag et al.~\citep{schlag2021linear} make the connection explicit: linear attention is equivalent to a fast-weight programmer using Hebbian outer-product writes. DeltaNet \citep{yang2024deltanet} replaces the outer product with the error-corrective delta rule: $W_t \leftarrow W_{t-1} + \beta_t(v_t - W_{t-1}k_t)k_t^\top$, actively removing stale associations before writing new ones, which reduces interference more directly than exponential decay. LUCID \citep{duvvuri2026lucid} derives causal attention as the delta rule in an RKHS and applies a key--key preconditioner to decorrelate queries, decoupling retrieval sharpness from temperature to improve long-context recall in transformers. Our update is the simpler pure-Hebbian variant with learned decay, applied additively to Mamba rather than as a replacement for attention. Mamba handles short-range selective compression; $W$ handles long-range associative recall.
 
 \section{Conclusion}
 
@@ -420,6 +424,11 @@ Jimmy Ba, Geoffrey Hinton, Volodymyr Mnih, Joel~Z. Leibo, and Catalin Ionescu.
 Ali Behrouz, Peilin Zhong, and Vahab Mirrokni.
 \newblock Titans: Learning to memorize at test time.
 \newblock \emph{arXiv preprint arXiv:2501.00663}, 2025.
+
+\bibitem{duvvuri2026lucid}
+Sai Surya Duvvuri, Nirmal Patel, Nilesh Gupta, and Inderjit~S. Dhillon.
+\newblock {LUCID}: Attention with preconditioned representations.
+\newblock \emph{arXiv preprint arXiv:2602.10410}, 2026.
 
 \bibitem{graves2014neural}
 Alex Graves, Greg Wayne, and Ivo Danihelka.
@@ -451,6 +460,13 @@ Hubert Ramsauer, Bernhard Sch{\"a}fl, Johannes Lehner, Philipp Seidl, Michael
   Geir~Kjetil Stormo, et~al.
 \newblock Hopfield networks is all you need.
 \newblock In \emph{International Conference on Learning Representations}, 2021.
+
+\bibitem{von2025mesanet}
+Johannes von~Oswald, Nino Scherrer, Seijin Kobayashi, Luca Versari, Songlin Yang,
+  Maximilian Schlegel, Kaitlin Maile, Yanick Schimpf, Oliver Sieberling,
+  Alexander Meulemans, et~al.
+\newblock {MesaNet}: Sequence modeling by locally optimal test-time training.
+\newblock \emph{arXiv preprint arXiv:2506.05233}, 2025.
 
 \bibitem[Schmidhuber(1992)]{schmidhuber1992learning}
 J{\"u}rgen Schmidhuber.

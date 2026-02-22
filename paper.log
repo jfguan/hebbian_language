@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  21 FEB 2026 23:25
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  22 FEB 2026 11:50
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -543,8 +543,8 @@ Package microtype Info: Loading generic protrusion settings for font family
 {/usr/local/texlive/2025/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/usr/loc
 al/texlive/2025/texmf-dist/fonts/enc/dvips/base/8r.enc}{/usr/local/texlive/2025
 /texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc}]
-LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 5
-6.
+LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 6
+0.
 
 (/usr/local/texlive/2025/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
@@ -560,7 +560,7 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 <figures/prose_training.pdf, id=95, 505.89pt x 289.08pt>
 File: figures/prose_training.pdf Graphic file (type pdf)
 <use figures/prose_training.pdf>
-Package pdftex.def Info: figures/prose_training.pdf  used on input line 176.
+Package pdftex.def Info: figures/prose_training.pdf  used on input line 180.
 (pdftex.def)             Requested size: 337.86465pt x 193.06946pt.
 
 
@@ -587,7 +587,7 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 <figures/code_training.pdf, id=106, 867.24pt x 289.08pt>
 File: figures/code_training.pdf Graphic file (type pdf)
 <use figures/code_training.pdf>
-Package pdftex.def Info: figures/code_training.pdf  used on input line 273.
+Package pdftex.def Info: figures/code_training.pdf  used on input line 277.
 (pdftex.def)             Requested size: 397.48499pt x 132.4976pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
@@ -597,15 +597,15 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 299.
+(hyperref)                removing `math shift' on input line 303.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\to' on input line 299.
+(hyperref)                removing `\to' on input line 303.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 299.
+(hyperref)                removing `math shift' on input line 303.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
@@ -617,7 +617,7 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
-Overfull \hbox (110.74477pt too wide) in paragraph at lines 350--373
+Overfull \hbox (110.74477pt too wide) in paragraph at lines 354--377
  [][] 
  []
 
@@ -627,7 +627,7 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 <figures/long_context_100M.pdf, id=167, 578.16pt x 433.62pt>
 File: figures/long_context_100M.pdf Graphic file (type pdf)
 <use figures/long_context_100M.pdf>
-Package pdftex.def Info: figures/long_context_100M.pdf  used on input line 378.
+Package pdftex.def Info: figures/long_context_100M.pdf  used on input line 382.
 
 (pdftex.def)             Requested size: 357.73405pt x 268.29907pt.
 
@@ -658,13 +658,13 @@ Package rerunfilecheck Info: File `paper.out' has not changed.
 (rerunfilecheck)             Checksum: A023D3C6B1CBC01926A8D4355DE71BA3;1729.
  ) 
 Here is how much of TeX's memory you used:
- 13342 strings out of 473190
- 206193 string characters out of 5715801
- 647978 words of memory out of 5000000
- 36118 multiletter control sequences out of 15000+600000
- 601692 words of font info for 214 fonts, out of 8000000 for 9000
+ 13359 strings out of 473190
+ 206455 string characters out of 5715801
+ 648017 words of memory out of 5000000
+ 36124 multiletter control sequences out of 15000+600000
+ 602174 words of font info for 220 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,10n,79p,1479b,608s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,10n,79p,1215b,604s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 ></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb>
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><
@@ -678,10 +678,10 @@ ocal/texlive/2025/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb></usr/loc
 al/texlive/2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive
 /2025/texmf-dist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texm
 f-dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on paper.pdf (12 pages, 243432 bytes).
+Output written on paper.pdf (12 pages, 245470 bytes).
 PDF statistics:
- 413 PDF objects out of 1000 (max. 8388607)
- 228 compressed objects within 3 object streams
- 72 named destinations out of 1000 (max. 500000)
+ 419 PDF objects out of 1000 (max. 8388607)
+ 234 compressed objects within 3 object streams
+ 74 named destinations out of 1000 (max. 500000)
  46696 words of extra memory for PDF output out of 51595 (max. 10000000)
 
