@@ -102,7 +102,7 @@ def main():
     p.add_argument("--models",  nargs="+", required=True)
     p.add_argument("--tokens",  type=int, default=4096)
     p.add_argument("--windows", type=int, default=4)
-    p.add_argument("--segment", type=int, default=512)
+    p.add_argument("--segment", type=int, default=1024)
     p.add_argument("--dataset", type=str, default="pg19", choices=["pg19", "code", "stack"])
     p.add_argument("--out",     type=str, default=None)
     args = p.parse_args()
@@ -116,6 +116,7 @@ def main():
 
     stem = f"eval_long/{args.tokens}tok_{args.windows}win"
     log_path = args.out or f"{stem}.txt"
+    png_path = log_path.replace(".txt", ".png")
     sys.stdout = Tee(log_path)
 
     device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
@@ -162,7 +163,7 @@ def main():
     for _, label, _ in models:
         print(f"  {label}")
 
-    plot(mean_loss, seg_labels, short_names, f"{stem}.png")
+    plot(mean_loss, seg_labels, short_names, png_path)
     print(f"\nLog: {log_path}")
     sys.stdout.close()
 

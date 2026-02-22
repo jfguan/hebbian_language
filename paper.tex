@@ -10,6 +10,7 @@
 \usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage{microtype}
+\usepackage{placeins}
 
 \title{Hebbian Associative Memory for State Space Models}
 
@@ -103,6 +104,7 @@ Each layer adds scalar $\lambda$, $\text{proj}_\text{write} \in \mathbb{R}^{d \t
 
 \section{Experiments and Results}
 
+\FloatBarrier
 \subsection{Synthetic KV Recall}
 \label{sec:recall}
 
@@ -110,6 +112,7 @@ We train a small memory model ($d=128$, 4 layers) on a synthetic task: a sequenc
 
 The model achieves near-perfect recall up to the training distribution (100\% at ${\leq}16$ pairs, 99.8\% at 32) and 96\% at 64 pairs ($2\times$ training count). Without $W$, the reset Mamba state has no mechanism to carry associations, giving chance performance ($1/16 \approx 6.2\%$).
 
+\FloatBarrier
 \subsection{Memory Capacity}
 
 We sweep the number of key-value pairs at test time (256 possible keys, 16 values, same trained model). Figure~\ref{fig:capacity} shows the full degradation curve; selected values:
@@ -142,6 +145,7 @@ Naive random-key theory predicts $\text{SNR} \approx \sqrt{d/k} \approx 1.4$ at 
 
 We conjecture that at higher $d$, learned \emph{superposition} \citep{elhage2022superposition} --- packing more than $d$ near-orthogonal features into $d$ dimensions --- allows capacity to scale faster than the $\sqrt{d/k}$ random baseline. Larger $d$ provides more room to arrange keys with low cross-talk, so recall should improve with model scale beyond what the random-key bound predicts.
 
+\FloatBarrier
 \subsection{Param-Matched Baselines on Prose (PG-19)}
 \label{sec:prose}
 
@@ -149,22 +153,7 @@ We compare three models on PG-19: an 8-layer memory model ($d=512$, 18.0M params
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lrr}
-\toprule
-Model & Val Loss & PPL \\
-\midrule
-Memory ($d=512$, 8L) & 2.477 & 11.91 \\
-Deep ($d=512$, 10L)  & 2.527 & 12.51 \\
-Wide ($d=576$, 8L)   & 2.589 & 13.32 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The memory model outperforms both baselines. Val loss is estimated over 10 random batches per checkpoint and is noisy; the apparent widening trend in Table~\ref{tab:prose_dynamics} should be interpreted cautiously. All models are still improving at 6M tokens. The dense BMMs in the memory mechanism train faster per step than Mamba's parallel scan at this scale, so the gap is larger at iso-FLOPs.
-
-\begin{table}[h]
-\centering
-\caption{Val loss (nats) on PG-19 at training checkpoints.}
+\caption{PG-19 val loss (nats) at training checkpoints. Val estimated over 10 random batches (noisy). Final PPL: memory 11.91, deep 12.51, wide 13.32.}
 \label{tab:prose_dynamics}
 \begin{tabular}{lrrr}
 \toprule
@@ -172,7 +161,8 @@ Tokens & Memory & Deep & Wide \\
 \midrule
 2M & 2.806 & 2.854 & 2.838 \\
 4M & 2.561 & 2.613 & 2.625 \\
-6M & 2.477 & 2.527 & 2.589 \\
+\midrule
+6M (final) & \textbf{2.477} & 2.527 & 2.589 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -184,68 +174,95 @@ Tokens & Memory & Deep & Wide \\
 \label{fig:prose_training}
 \end{figure}
 
-\paragraph{Long-context generalization.}
-Both models generalize far beyond their 2K training length with no fine-tuning. The memory advantage grows with context as $W$ accumulates associations:
+Val estimates are noisy (10 random batches per checkpoint); the trend should be interpreted cautiously. All models are still improving at 6M tokens.
+
+\FloatBarrier
+\subsubsection*{Long-context evaluation: Prose (18M)}
+Per-segment loss at 1K intervals, averaged over 8 random 16K-token windows from PG-19 val (memory vs.\ wide baseline, no fine-tuning):
 
 \begin{table}[h]
 \centering
+\caption{Per-segment PG-19 val loss at 16K context ($8\times$ training length).}
 \begin{tabular}{lrrr}
 \toprule
-Eval length & Memory & Wide & Gap \\
+Segment & Memory & Wide & Gap \\
 \midrule
-16K (8$\times$ train)  & 2.482 & 2.500 & $+$0.019 \\
-64K (32$\times$ train) & 2.484 & 2.512 & $+$0.028 \\
+0K--1K   & 2.554 & 2.538 & $-$0.017 \\
+1K--2K   & 2.502 & 2.517 & $+$0.016 \\
+2K--3K   & 2.555 & 2.584 & $+$0.029 \\
+3K--4K   & 2.512 & 2.561 & $+$0.049 \\
+4K--5K   & 2.496 & 2.519 & $+$0.023 \\
+5K--6K   & 2.516 & 2.545 & $+$0.029 \\
+6K--7K   & 2.441 & 2.444 & $+$0.003 \\
+7K--8K   & 2.440 & 2.470 & $+$0.031 \\
+8K--9K   & 2.408 & 2.436 & $+$0.028 \\
+9K--10K  & 2.443 & 2.487 & $+$0.043 \\
+10K--11K & 2.457 & 2.487 & $+$0.030 \\
+11K--12K & 2.450 & 2.461 & $+$0.010 \\
+12K--13K & 2.474 & 2.502 & $+$0.028 \\
+13K--14K & 2.447 & 2.455 & $+$0.008 \\
+14K--15K & 2.480 & 2.480 & $+$0.000 \\
+15K--16K & 2.533 & 2.520 & $-$0.013 \\
+\midrule
+Overall  & 2.482 & 2.500 & $+$0.019 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The effect is modest on prose; the gap is substantially larger on code (Section~\ref{sec:code}), where identifier reuse creates denser associations for $W$ to exploit.
+Memory wins on 13 of 16 segments. The gap is modest and noisy --- prose lacks the dense repeated-identifier structure that lets $W$ accumulate strong associations. At 64K ($32\times$ training length) the overall gap widens slightly to $+$0.028 (memory 2.484, wide 2.512). The effect is substantially larger on structured code, where identifier reuse gives $W$ much clearer associations to exploit (Section~\ref{sec:code}).
 
+\FloatBarrier
 \subsection{Code (Headline Result)}
 \label{sec:code}
 
-We train on Python files from codeparrot/codeparrot-clean (files $\geq$4096 chars), using a 512-vocab BPE tokenizer yielding ${\sim}$16M training tokens. The memory model is 8-layer (18.0M params) and the baseline is the 10-layer deep model (17.2M params), trained identically.
+We train on Python files from codeparrot/codeparrot-clean (files $\geq$4096 chars), using a 512-vocab BPE tokenizer (${\sim}$16M tokens). Memory: 8-layer, 18.0M params; deep baseline: 10-layer, 17.2M params. Both trained identically, except the cosine LR horizon was set to ${\sim}$500K steps --- far beyond the 1465-step run --- so LR was near-peak throughout (caveat: results may differ under a tuned schedule).
 
 \begin{table}[h]
 \centering
-\caption{Final val loss on Python code after 6M training tokens.}
-\begin{tabular}{lrrr}
+\caption{Python code val loss (nats) during training, with PPL at the final checkpoint.}
+\begin{tabular}{lrrrrr}
 \toprule
-Model & Val Loss & BPB & PPL \\
+Tokens & Memory & Deep & Gap & PPL (Mem / Deep) \\
 \midrule
-Memory (d=512, 8L) & 1.848 & 1.33 & 6.35  \\
-Deep (d=512, 10L)  & 2.787 & 2.01 & 16.24 \\
-Gap                & $+$0.939 & $+$0.68 & \\
+0.4M & 3.207 & 3.782 & $+$0.575 & --- \\
+0.8M & 2.739 & 3.329 & $+$0.590 & --- \\
+2.0M & 2.195 & 3.215 & $+$1.021 & --- \\
+4.1M & 2.024 & 2.571 & $+$0.547 & --- \\
+\midrule
+6.0M & \textbf{1.848} & 2.787 & $+$0.939 & 6.35 / 16.24 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The gap is $10\times$ larger than on prose. Training curves are shown in Figure~\ref{fig:code_training}; the memory model surpasses the baseline's final val loss by step 200 (${\sim}$800K tokens, 14\% of total training).
-
-\begin{table}[h]
-\centering
-\caption{Code val loss during training.}
-\begin{tabular}{lrrr}
-\toprule
-Tokens & Memory & Deep & Gap \\
-\midrule
-0.4M & 3.207 & 3.782 & $+$0.575 \\
-0.8M & 2.739 & 3.329 & $+$0.590 \\
-2.0M & 2.195 & 3.215 & $+$1.021 \\
-4.1M & 2.024 & 2.571 & $+$0.547 \\
-6.0M & 1.848 & 2.787 & $+$0.939 \\
-\bottomrule
-\end{tabular}
-\end{table}
+The gap ($+$0.939 nats) is $10\times$ larger than on prose. Memory surpasses the baseline's final val loss by step 200 (${\sim}$800K tokens, 14\% of training).
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=\textwidth]{figures/code_training.pdf}
-\caption{Python code val loss over training. Left: 18M models (6M tokens). Right: 100M models (16.4M tokens, full run). Memory leads at every checkpoint in both scales.}
+\includegraphics[width=0.85\textwidth]{figures/code_training_18M.pdf}
+\caption{Python code val loss over training (18M models, 6M tokens). Memory leads throughout.}
 \label{fig:code_training}
 \end{figure}
 
-\paragraph{Long-context evaluation (18M).}
+\FloatBarrier
+\subsubsection*{W ablation}
+To confirm that $W$ itself (not just the additional parameters) drives the improvement, we compare two inference passes on the trained 18M code model: normal ($W$ updating each step) vs.\ frozen ($W$ reset to its pre-step value, so it never accumulates). Over 8 random 8K-token windows:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+ & Val Loss & vs.\ updating \\
+\midrule
+$W$ updating (normal) & 2.019 & --- \\
+$W$ frozen            & 2.914 & $+$0.895 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Freezing $W$ costs 0.895 nats --- nearly equal to the full memory-vs-baseline gap of 0.939. The improvement comes from $W$, not from the extra parameters. The delta is large from position 0 and consistent throughout the sequence, indicating $W$ provides useful associations immediately.
+
+\FloatBarrier
+\subsubsection*{Long-context evaluation: Code (18M, codeparrot)}
 We evaluate both 18M code models on 4 random 16K-token windows ($8\times$ training length) from the code val set, with no fine-tuning, measuring per-segment loss at 1K intervals (averaged over windows):
 
 \begin{table}[h]
@@ -278,52 +295,17 @@ Overall  & 1.912 & 2.658 & $+$0.746 \\
 
 Memory wins every segment. The gap grows from $+$0.447 at 0--1K to $+$1.067 at 7--8K, peaks again at 14K--15K ($+$0.992), as $W$ accumulates file-level associations. Identifiers referenced late in a file were first defined early; by the time the usage site appears, $W$ has stored the (predecessor-of-definition, post-definition state) pair and retrieves it directly. The baseline must instead retain all bindings through its 16-dimensional recurrent state across thousands of intervening tokens.
 
-\paragraph{W ablation.}
-To confirm that $W$ itself (not just the additional parameters) drives the improvement, we compare two inference passes on the trained 18M code model: normal ($W$ updating each step) vs.\ frozen ($W$ reset to its pre-step value, so it never accumulates). Over 8 random 8K-token windows:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lrr}
-\toprule
- & Val Loss & vs.\ updating \\
-\midrule
-$W$ updating (normal) & 2.019 & --- \\
-$W$ frozen            & 2.914 & $+$0.895 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Freezing $W$ costs 0.895 nats --- nearly equal to the full memory-vs-baseline gap of 0.939. The improvement comes from $W$, not from the extra parameters. The delta is large from position 0 and consistent throughout the sequence, indicating $W$ provides useful associations immediately.
-
-\paragraph{Learned decay ($\gamma$).}
-At 18M scale, all 8 layers converge to $\gamma \approx 0.991$--$0.993$, giving effective memory windows of 97--144 steps with little specialization across layers. At 100M scale the picture changes qualitatively: layers 2--5 converge to $\gamma \approx 0.997$ (window ${\sim}$340--355 steps, roughly the length of a function body), while the first and last three layers maintain short-range associations (windows ${\sim}$50--80). The model has learned to route long-range file-level recall through the middle of the network while delegating local syntax to the boundary layers --- specialization that only emerges clearly at sufficient scale.
-
+\FloatBarrier
 \subsection{Model Size Scaling: 18M $\to$ 100M}
 
-We scale to 100M parameters on the same Python code dataset, training both models identically: $B{=}1$, $T{=}2048$, 8000 steps (16.4M tokens), constant LR $3{\times}10^{-4}$, $\alpha{=}0.05$. Val loss is measured on a single batch (20K tokens); readings have high variance but the trend is unambiguous.
+We scale to 100M parameters on the same Python code dataset (512-vocab BPE, ${\sim}$16M tokens), training both models identically: $B{=}1$, $T{=}2048$, 8000 steps (16.4M tokens), constant LR $3{\times}10^{-4}$, $\alpha{=}0.05$. Val loss is measured on a single batch (20K tokens); readings have high variance but the trend is unambiguous.
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lrrrr}
+\caption{100M training dynamics on Python code. Bold marks each model's best checkpoint.}
+\begin{tabular}{lrrr}
 \toprule
-Model & Params & Final Val & Best Val & PPL (best) \\
-\midrule
-Memory ($d{=}1024$, 12L) & 106M & 1.846 & \textbf{1.661} & 5.27 \\
-Deep baseline ($d{=}1024$, 16L) & 107M & 2.187 & 1.968 & 7.16 \\
-\midrule
-Gap (best vs.\ best) & & & $+$0.307 & \\
-\bottomrule
-\end{tabular}
-\caption{100M parameter results on Python code after 16.4M training tokens.}
-\end{table}
-
-The memory model leads at every evaluation point. Full training dynamics over 16.4M tokens:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{rrrrrr}
-\toprule
-Tokens & Memory & Baseline & Gap \\
+Tokens & Memory & Deep & Gap \\
 \midrule
 0.4M  & 3.353 & 3.984 & $+$0.631 \\
 2.0M  & 2.215 & 2.898 & $+$0.683 \\
@@ -332,83 +314,144 @@ Tokens & Memory & Baseline & Gap \\
 12.3M & 1.733 & 2.264 & $+$0.531 \\
 14.7M & \textbf{1.661} & 2.182 & $+$0.521 \\
 15.6M & 1.747 & \textbf{1.968} & $+$0.221 \\
+\midrule
 16.4M & 1.846 & 2.187 & $+$0.341 \\
+\midrule
+Best  & \textbf{1.661} & \textbf{1.968} & $+$0.307 \\
 \bottomrule
 \end{tabular}
-\caption{Training dynamics at 100M scale over the full 16.4M token run. Both models are still improving; bold marks each model's best checkpoint.}
 \end{table}
 
-The gap measured at final checkpoints ($+$0.341) understates the true advantage: the memory model's best checkpoint (1.661) beats the baseline's best checkpoint (1.968) by $+$0.307 nats. The gap at 4M tokens ($+$0.707) is the largest, reflecting the memory model's early lead before the stronger baseline catches up. Both models are clearly undertrained at 16M tokens.
+Memory leads at every checkpoint; the gap peaks at 4M tokens ($+$0.707) before closing as the stronger baseline catches up. The 18M memory model outperforms the 100M deep baseline throughout its entire run --- including its best checkpoint (1.968 vs.\ 1.848) --- at $5.6\times$ fewer parameters and $2.7\times$ fewer training tokens.
 
-The most striking result is the cross-scale comparison: the 18M memory model (1.848 nats, 6M tokens) outperforms the fully-trained 100M baseline at \emph{every} point in the 100M baseline's training run, including its best-ever checkpoint (1.968). A model $5.6\times$ smaller, trained on $2.7\times$ fewer tokens, achieves better perplexity because $W$ provides a capability --- associative recall over file-length context --- that additional Mamba layers and training tokens cannot replicate.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/code_training_100M.pdf}
+\caption{Python code val loss over training (100M models, 16.4M tokens). Memory leads at every checkpoint.}
+\label{fig:code_training_100M}
+\end{figure}
 
-The narrowing gap at 100M vs.\ 18M ($+$0.307 vs.\ $+$0.939) is partly expected: the 100M baseline is substantially stronger than its 18M counterpart (1.968 best vs.\ 2.787), leaving less headroom. The dataset constraint --- 16M tokens of narrow Python with a 512-token BPE vocabulary --- is the primary bottleneck. Longer files and a richer vocabulary provide denser, cleaner key-value pairs for $W$ to exploit.
+The narrowed gap at 100M ($+$0.307 vs.\ $+$0.939 at 18M) reflects a stronger baseline: best val 1.968 vs.\ 2.787, leaving less headroom.
 
-\paragraph{Long-context evaluation at 100M.}
-We evaluate both 100M models on 8 random 16K-token windows with no fine-tuning, measuring per-segment loss at 512-token intervals (averaged over windows). Full per-segment results and gap are shown in Figure~\ref{fig:long_context_100M}; selected rows:
+\FloatBarrier
+\subsubsection*{Long-context evaluation: Code (100M, codeparrot)}
+Per-segment loss at 1K intervals, averaged over 8 random 16K-token windows (no fine-tuning):
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lrrrrrrrrrr}
+\caption{Per-segment val loss at 16K context, 100M models (8 windows, 1K segments).}
+\begin{tabular}{lrrr}
 \toprule
-Segment (K) & 0--0.5 & 0.5--1 & 1--1.5 & 1.5--2 & 2--2.5 & 2.5--3 & 3--3.5 & 3.5--4 & 4--4.5 & 4.5--5 \\
+Segment & Memory & Deep & Gap \\
 \midrule
-Memory  & 2.036 & 1.769 & 1.672 & 1.648 & 1.671 & 1.473 & 1.808 & 1.879 & 1.799 & 1.854 \\
-Deep    & 2.304 & 2.157 & 2.121 & 2.103 & 2.120 & 2.013 & 2.173 & 2.251 & 2.091 & 2.185 \\
+0K--1K   & 1.902 & 2.230 & $+$0.328 \\
+1K--2K   & 1.660 & 2.112 & $+$0.452 \\
+2K--3K   & 1.572 & 2.066 & $+$0.494 \\
+3K--4K   & 1.844 & 2.212 & $+$0.368 \\
+4K--5K   & 1.827 & 2.138 & $+$0.311 \\
+5K--6K   & 1.805 & 2.223 & $+$0.418 \\
+6K--7K   & 1.768 & 2.217 & $+$0.449 \\
+7K--8K   & 1.580 & 2.153 & $+$0.572 \\
+8K--9K   & 1.744 & 2.144 & $+$0.400 \\
+9K--10K  & 1.759 & 2.133 & $+$0.374 \\
+10K--11K & 1.732 & 2.163 & $+$0.430 \\
+11K--12K & 1.797 & 2.171 & $+$0.374 \\
+12K--13K & 1.749 & 2.205 & $+$0.456 \\
+13K--14K & 1.405 & 1.821 & $+$0.416 \\
+14K--15K & 1.302 & 1.791 & $+$0.489 \\
+15K--16K & 1.512 & 1.961 & $+$0.449 \\
 \midrule
-Segment (K) & 5--5.5 & 5.5--6 & 6--6.5 & 6.5--7 & 7--7.5 & 7.5--8 & 8--8.5 & 8.5--9 & 9--9.5 & 9.5--10 \\
-\midrule
-Memory  & 1.860 & 1.750 & 1.759 & 1.776 & 1.618 & 1.543 & 1.742 & 1.746 & 1.716 & 1.802 \\
-Deep    & 2.326 & 2.120 & 2.158 & 2.277 & 2.261 & 2.045 & 2.210 & 2.079 & 2.029 & 2.237 \\
-\midrule
-Segment (K) & 10--10.5 & 10.5--11 & 11--11.5 & 11.5--12 & 12--12.5 & 12.5--13 & 13--13.5 & 13.5--14 & 14--14.5 & 14.5--15 \\
-\midrule
-Memory  & 1.768 & 1.697 & 1.780 & 1.813 & 1.767 & 1.731 & 1.581 & 1.230 & 1.405 & 1.199 \\
-Deep    & 2.197 & 2.128 & 2.179 & 2.162 & 2.204 & 2.206 & 1.941 & 1.702 & 1.907 & 1.676 \\
-\midrule
-Segment (K) & 15--15.5 & 15.5--16 & & & & & & & & Overall \\
-\midrule
-Memory  & 1.551 & 1.474 & & & & & & & & \textbf{1.685} \\
-Deep    & 1.980 & 1.942 & & & & & & & & 2.109 \\
+Overall  & \textbf{1.685} & 2.109 & $+$0.424 \\
 \bottomrule
 \end{tabular}
-\caption{100M model: per-segment val loss over 16K context (8 windows, 512-token segments). Gap is positive at every segment.}
 \end{table}
+
+Memory wins every segment. Unlike the 18M model where the gap peaked at 7--8K, the 100M memory model continues improving to 14--15K tokens, with the larger $W$ ($1024{\times}1024$) accumulating associations across the full window. Figure~\ref{fig:long_context_100M} shows the full per-segment profile.
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/long_context_100M.pdf}
-\caption{100M model per-segment val loss (top) and gap (bottom) over 16K context. Vertical dotted line marks training length (2K tokens). The gap is $+$0.388 at 0.5K, grows to $+$0.502 at 7.5K, and remains large to the end; memory best is 1.199 at 14.5--15K.}
+\caption{100M model per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens).}
 \label{fig:long_context_100M}
 \end{figure}
 
-Unlike the 18M results where the gap peaked at 7--8K, the 100M memory model's best segment (1.199) comes at 14.5--15K tokens, and loss is still falling at the end of the 16K window. The larger $W$ ($1024{\times}1024$) continues accumulating useful associations well past where the 18M capacity saturates. The gap is never below $+$0.38 nats and the model generalises $8{\times}$ beyond its 2K training length with no degradation.
+\FloatBarrier
+\subsubsection*{Learned decay ($\gamma$)}
+At 18M, all 8 layers converge to $\gamma \approx 0.990$--$0.993$ (windows 97--144 steps) with little specialization. At 100M, layers 1--5 develop long-range associations ($\gamma \approx 0.996$--$0.997$, windows 250--355 steps) while layer 0 and layers 6--11 stay short-range ($\gamma \approx 0.979$--$0.992$, windows 48--125 steps). Layer specialization only emerges at the larger scale (Figure~\ref{fig:decay_gamma}).
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/decay_gamma.pdf}
+\caption{Learned effective memory window per layer ($= 1/(1-\gamma)$) for the 18M and 100M code memory models.}
+\label{fig:decay_gamma}
+\end{figure}
+
+\FloatBarrier
 \subsection{Dataset Breadth: Multilingual Code (The Stack)}
 
-The Python code experiments use a single language, a 512-token BPE vocabulary, and relatively short files. To test whether the advantage transfers to a richer setting we train 100M models on a multilingual corpus drawn from The Stack \citep{kocetkov2022stack}: eight languages (Python, JavaScript, TypeScript, Java, C, C\texttt{++}, Rust, Go), files filtered to ${\geq}32{,}000$ characters, and a 1024-vocab BPE tokenizer. Larger files and a richer vocabulary produce denser cross-reference structure and more distinctive identifier tokens --- precisely the conditions that favour $W$.
-
-Architecture: memory 97.5M (11 layers), deep 101.1M (15 layers, slight parameter advantage given to baseline), $\alpha{=}0.04$. After 8.2M training tokens --- still early relative to the 64K-step schedule --- both models are clearly undertrained; best-vs-best gap is $+$0.263 nats (1.621 vs.\ 1.884). The early-training gap exceeds $+$1.3 nats at several checkpoints, reflecting the memory model's faster initial learning.
-
-\paragraph{Long-context evaluation.}
-We evaluate on 8 random 16K-token windows (no fine-tuning), averaging per-segment loss at 512-token intervals. Selected rows:
+We train 100M models on The Stack \citep{kocetkov2022stack}: eight languages (Python, JavaScript, TypeScript, Java, C, C\texttt{++}, Rust, Go), files ${\geq}32{,}000$ chars, 1024-vocab BPE, ${\sim}$14.5M training tokens. Memory: 97.5M (11L), deep baseline: 101.1M (15L), $\alpha{=}0.04$. Both models are undertrained at 8.2M tokens; best-vs-best gap is $+$0.263 nats (1.621 vs.\ 1.884).
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lrrrrrrrrrr}
+\caption{The Stack 100M training dynamics. Bold marks each model's best checkpoint.}
+\begin{tabular}{lrrr}
 \toprule
-Segment (K) & 0--0.5 & 0.5--1 & 1--1.5 & 1.5--2 & 2--2.5 & 3--3.5 & 5--5.5 & 7--7.5 & 10--10.5 & 15.5--16 \\
+Tokens & Memory & Deep & Gap \\
 \midrule
-Memory  & 1.608 & 1.297 & 1.272 & 1.199 & 1.122 & 1.437 & 1.216 & 1.672 & 1.356 & 1.601 \\
-Deep    & 2.087 & 2.107 & 2.086 & 2.048 & 2.036 & 2.313 & 2.086 & 2.566 & 1.884 & 1.960 \\
+0.4M & 5.044 & 5.354 & $+$0.310 \\
+0.8M & 3.251 & 4.454 & $+$1.203 \\
+2.1M & 2.237 & 3.102 & $+$0.865 \\
+4.1M & 1.919 & 2.370 & $+$0.451 \\
+6.1M & 1.678 & 2.576 & $+$0.898 \\
 \midrule
-Gap     & $+$0.479 & $+$0.810 & $+$0.814 & $+$0.849 & $+$0.914 & $+$0.876 & $+$0.870 & $+$0.894 & $+$0.528 & $+$0.359 \\
+8.2M & 1.923 & 2.049 & $+$0.126 \\
+\midrule
+Best & \textbf{1.621} & \textbf{1.884} & $+$0.263 \\
 \bottomrule
 \end{tabular}
-\caption{Stack 100M: per-segment val loss over 16K context (8 windows). Memory wins all 32 segments. Overall: memory 1.453 vs.\ deep 2.092 ($+$0.639 nats).}
 \end{table}
 
-Memory wins all 32 segments. The overall gap ($+$0.639) is larger than the Python 100M gap ($+$0.424), consistent with the prediction that a richer vocabulary and longer files provide more associations for $W$ to exploit. The deep baseline collapses to ${\sim}3.05$ nats on the two densest windows --- files where identifier reuse is so frequent that a model without persistent memory has no foothold --- while memory stays at ${\sim}1.67$ nats. Both models are substantially undertrained; results with full training are expected to widen further.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/stack_training_100M.pdf}
+\caption{Multilingual code (The Stack) val loss over training, 100M models.}
+\label{fig:stack_training}
+\end{figure}
+
+\FloatBarrier
+\subsubsection*{Long-context evaluation: Code (100M, The Stack)}
+Per-segment loss at 1K intervals, averaged over 8 random 16K-token windows (no fine-tuning):
+
+\begin{table}[h]
+\centering
+\caption{Per-segment val loss at 16K context, Stack 100M (8 windows, 1K segments).}
+\begin{tabular}{lrrr}
+\toprule
+Segment & Memory & Deep & Gap \\
+\midrule
+0K--1K   & 1.452 & 2.097 & $+$0.645 \\
+1K--2K   & 1.235 & 2.067 & $+$0.831 \\
+2K--3K   & 1.295 & 2.067 & $+$0.772 \\
+3K--4K   & 1.344 & 2.244 & $+$0.901 \\
+4K--5K   & 1.194 & 2.061 & $+$0.867 \\
+5K--6K   & 1.332 & 2.199 & $+$0.867 \\
+6K--7K   & 1.622 & 2.435 & $+$0.813 \\
+7K--8K   & 1.618 & 2.437 & $+$0.819 \\
+8K--9K   & 1.487 & 2.152 & $+$0.665 \\
+9K--10K  & 1.464 & 2.027 & $+$0.563 \\
+10K--11K & 1.397 & 1.854 & $+$0.457 \\
+11K--12K & 1.575 & 1.973 & $+$0.398 \\
+12K--13K & 1.534 & 1.969 & $+$0.435 \\
+13K--14K & 1.602 & 2.149 & $+$0.548 \\
+14K--15K & 1.624 & 1.870 & $+$0.246 \\
+15K--16K & 1.477 & 1.873 & $+$0.397 \\
+\midrule
+Overall  & \textbf{1.453} & 2.092 & $+$0.639 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Memory wins all 16 segments. The overall gap ($+$0.639) exceeds the Python 100M result ($+$0.424), consistent with the richer vocabulary and longer files providing denser associations for $W$. The deep baseline collapses to ${\sim}3.05$ nats on the two densest windows while memory stays at ${\sim}1.67$ nats.
 
 \clearpage
 \section{Related Work}
