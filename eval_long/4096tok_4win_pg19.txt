@@ -1,0 +1,5 @@
+Device: mps | 4096 tokens x 4 windows
+
+Loading cached tokenizer and token arrays...
+  Train: 8,287,509 tokens | Val: 598,056 tokens
+Window 1/4: val[53011:57107]

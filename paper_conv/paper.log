@@ -1,8 +1,8 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  23 FEB 2026 22:45
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  23 FEB 2026 23:38
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**paper
+**paper.tex
 (./paper.tex
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
@@ -829,20 +829,20 @@ s been already used, duplicate ignored
                                                   \__shipout_drop_firstpage_...
 l.163 
       ]
-<val_loss_comparison.png, id=100, 722.7pt x 361.35pt>
+<val_loss_comparison.png, id=104, 722.7pt x 361.35pt>
 File: val_loss_comparison.png Graphic file (type png)
 <use val_loss_comparison.png>
 Package pdftex.def Info: val_loss_comparison.png  used on input line 189.
 (pdftex.def)             Requested size: 397.48499pt x 198.74312pt.
-<learned_params.png, id=103, 722.7pt x 252.945pt>
-File: learned_params.png Graphic file (type png)
-<use learned_params.png>
-Package pdftex.def Info: learned_params.png  used on input line 200.
-(pdftex.def)             Requested size: 397.48499pt x 139.12018pt.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
+<learned_params.png, id=108, 722.7pt x 252.945pt>
+File: learned_params.png Graphic file (type png)
+<use learned_params.png>
+Package pdftex.def Info: learned_params.png  used on input line 220.
+(pdftex.def)             Requested size: 397.48499pt x 139.12018pt.
 
 
 [3
@@ -850,40 +850,47 @@ pdfTeX warning (ext4): destination with the same identifier (name{table.1}) has
  been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.211 
-      
+l.223 \end{figure}
+                  
 pdfTeX warning (ext4): destination with the same identifier (name{figure.2}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.211 
-       <./val_loss_comparison.png>]
+l.223 \end{figure}
+                   <./val_loss_comparison.png>]
 
 [4
+pdfTeX warning (ext4): destination with the same identifier (name{table.2}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.244 
+      
 pdfTeX warning (ext4): destination with the same identifier (name{figure.3}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.232 T
-       he complexity of modern SSMs and attention may be solving a problem--...
- <./learned_params.png>] (./paper.bbl)
+l.244 
+       <./learned_params.png>] (./paper.bbl
 
-[5] (./paper.aux)
+[5])
+
+[6] (./paper.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
 Package rerunfilecheck Info: File `paper.out' has not changed.
-(rerunfilecheck)             Checksum: 30489696237E399419FA11447647BA51;1253.
+(rerunfilecheck)             Checksum: 0CBF5D010A4373E190FFB36EE63145E6;1409.
  ) 
 Here is how much of TeX's memory you used:
- 22305 strings out of 473190
- 412241 string characters out of 5715801
- 801966 words of memory out of 5000000
- 45114 multiletter control sequences out of 15000+600000
+ 22306 strings out of 473190
+ 412230 string characters out of 5715801
+ 802047 words of memory out of 5000000
+ 45113 multiletter control sequences out of 15000+600000
  578505 words of font info for 80 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 84i,10n,91p,809b,807s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 84i,10n,91p,783b,807s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 ></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx9.pfb><
 /usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></
@@ -903,10 +910,10 @@ xmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/202
 5/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/texmf-di
 st/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/fonts/t
 ype1/urw/times/utmri8a.pfb>
-Output written on paper.pdf (5 pages, 443388 bytes).
+Output written on paper.pdf (6 pages, 442988 bytes).
 PDF statistics:
- 274 PDF objects out of 1000 (max. 8388607)
- 222 compressed objects within 3 object streams
- 49 named destinations out of 1000 (max. 500000)
- 103 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 281 PDF objects out of 1000 (max. 8388607)
+ 228 compressed objects within 3 object streams
+ 51 named destinations out of 1000 (max. 500000)
+ 111 words of extra memory for PDF output out of 10000 (max. 10000000)
 

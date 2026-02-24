@@ -1,10 +1,7 @@
-"""Conv + Hebbian associative memory.
+"""Conv + Hebbian associative memory for FineWeb benchmark.
 
-Depthwise conv for local feature extraction (kernel=d_conv tokens),
-Hebbian outer-product memory for long-range associative binding.
-
-Memory: W_t = γW_{t-1} + v_t⊗k_t, read_t = W_{t-1}·rk_t
-Training uses O(TC·D + T·D²) chunkwise parallel form; inference uses O(D²) recurrent form.
+Target: GPT-2 124M scale on FineWeb (3.28 val loss target).
+Config: D=768, L=18, expand=2, d_conv=4, vocab=50304 → ~124M params.
 """
 
 from dataclasses import dataclass
@@ -16,11 +13,11 @@ import torch.nn.functional as F
 
 @dataclass
 class Config:
-    vocab_size: int = 384
-    d_model: int = 512
+    vocab_size: int = 50304  # GPT-2 (50257 padded to multiple of 64)
+    d_model: int = 768
     d_conv: int = 4
     expand: int = 2
-    n_layers: int = 8
+    n_layers: int = 18
     memory_alpha: float = 0.03
     chunk_size: int = 64
 
@@ -32,7 +29,13 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(d))
 
     def forward(self, x):
-        return x * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + self.eps).to(x.dtype) * self.weight
+        return (
+            x
+            * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + self.eps).to(
+                x.dtype
+            )
+            * self.weight
+        )
 
 
 class HebbianLayer(nn.Module):
@@ -48,13 +51,17 @@ class HebbianLayer(nn.Module):
         self.d_conv = cfg.d_conv
         self.chunk_size = cfg.chunk_size
 
-        # Conv block: project up, depthwise conv, gate, project down
+        # Conv block
         self.norm = RMSNorm(D)
         self.proj = nn.Linear(D, d_inner, bias=False)
         self.gate = nn.Linear(D, d_inner, bias=False)
         self.conv1d = nn.Conv1d(
-            d_inner, d_inner, cfg.d_conv,
-            bias=True, groups=d_inner, padding=cfg.d_conv - 1,
+            d_inner,
+            d_inner,
+            cfg.d_conv,
+            bias=True,
+            groups=d_inner,
+            padding=cfg.d_conv - 1,
         )
         self.out_proj = nn.Linear(d_inner, D, bias=False)
 
@@ -62,26 +69,15 @@ class HebbianLayer(nn.Module):
         self.proj_write = nn.Linear(D, D, bias=False)
         self.proj_read = nn.Linear(D, D, bias=False)
         self.decay = nn.Parameter(torch.tensor(4.6))  # σ(4.6) ≈ 0.99
-        # Learned memory strength, initialized to cfg.memory_alpha
         self.log_alpha = nn.Parameter(torch.tensor(cfg.memory_alpha).log())
 
     def _conv(self, x):
-        """Parallel form: (B, L, D) -> (B, L, D)."""
         B, L, D = x.shape
         val = self.proj(x).transpose(1, 2)
         val = F.silu(self.conv1d(val)[:, :, :L].transpose(1, 2))
         return self.out_proj(val * F.silu(self.gate(x)))
 
-    def _conv_step(self, x, conv_state):
-        """Recurrent form: (B, D), (B, d_inner, d_conv-1) -> (B, D), state."""
-        val = self.proj(x)
-        conv_input = torch.cat([conv_state, val.unsqueeze(-1)], dim=-1)
-        conv_state = conv_input[:, :, 1:]
-        val = F.silu((conv_input * self.conv1d.weight.squeeze(1)).sum(-1) + self.conv1d.bias)
-        return self.out_proj(val * F.silu(self.gate(x))), conv_state
-
     def _memory_attend(self, out):
-        """Chunkwise parallel Hebbian memory. O(TC·D + T·D²) time."""
         B, T, D = out.shape
         C = self.chunk_size
         out32 = out.float()
@@ -103,11 +99,9 @@ class HebbianLayer(nn.Module):
 
             rk_c, wk_c, v_c = rk[:, start:end], wk[:, start:end], v[:, start:end]
 
-            # Inter-chunk: γ^l * (W_prev @ rk_c[l])
             inter = torch.matmul(W, rk_c.transpose(1, 2)).transpose(1, 2)
-            inter = inter * (gamma ** p)[None, :, None]
+            inter = inter * (gamma**p)[None, :, None]
 
-            # Intra-chunk: (M ⊙ S) @ v
             S = torch.bmm(rk_c, wk_c.transpose(1, 2))
             diffs = (p[:, None] - 1 - p[None, :]).clamp(min=0)
             M = torch.exp(diffs * log_gamma) * (p[:, None] > p[None, :])
@@ -115,9 +109,8 @@ class HebbianLayer(nn.Module):
 
             reads_list.append(inter + intra)
 
-            # Advance W: γ^Ci · W + Σ_l γ^(Ci-1-l) · v[l] ⊗ wk[l]
             gw = (gamma ** (Ci - 1 - p))[None, :, None]
-            W = gamma ** Ci * W + torch.bmm((v_c * gw).transpose(1, 2), wk_c)
+            W = gamma**Ci * W + torch.bmm((v_c * gw).transpose(1, 2), wk_c)
 
         reads = torch.cat(reads_list, dim=1)
         return out + self.log_alpha.exp() * self.proj_read(reads).to(out.dtype)
@@ -128,7 +121,6 @@ class HebbianLayer(nn.Module):
         return x + out
 
     def step(self, x, state=None):
-        """Recurrent form: W ← γW + v⊗k, read = W·q."""
         B, D = x.shape
         if state is None:
             conv_st = x.new_zeros(B, self.d_inner, self.d_conv - 1)
@@ -137,7 +129,14 @@ class HebbianLayer(nn.Module):
         else:
             conv_st, W, r_prev = state
 
-        out, conv_st = self._conv_step(self.norm(x), conv_st)
+        normed = self.norm(x)
+        val = self.proj(normed)
+        conv_input = torch.cat([conv_st, val.unsqueeze(-1)], dim=-1)
+        conv_st = conv_input[:, :, 1:]
+        val = F.silu(
+            (conv_input * self.conv1d.weight.squeeze(1)).sum(-1) + self.conv1d.bias
+        )
+        out = self.out_proj(val * F.silu(self.gate(normed)))
         raw_out = out  # save before memory augmentation for next step's write key
 
         gamma = torch.sigmoid(self.decay)
@@ -153,10 +152,12 @@ class HebbianConv(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.embedding = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        self.layers = nn.ModuleList([HebbianLayer(cfg) for _ in range(cfg.n_layers)])
+        self.layers = nn.ModuleList(
+            [HebbianLayer(cfg) for _ in range(cfg.n_layers)]
+        )
         self.norm = RMSNorm(cfg.d_model)
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
-        self.embedding.weight = self.lm_head.weight
+        self.embedding.weight = self.lm_head.weight  # weight tying
 
     def forward(self, input_ids, targets=None):
         x = self.embedding(input_ids)
@@ -165,7 +166,9 @@ class HebbianConv(nn.Module):
         logits = self.lm_head(self.norm(x))
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), targets.view(-1)
+            )
         return logits, loss
 
     def step(self, token, states=None):

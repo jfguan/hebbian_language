@@ -15,3 +15,59 @@ Window 2/8: val[51914:68298]
 Window 3/8: val[251871:268255]
   checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 7.3633
   checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True): 6.9838
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 7.0497
+
+Window 4/8: val[255281:271665]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 7.3424
+  checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True): 7.0019
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 7.0562
+
+Window 5/8: val[380741:397125]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 6.9167
+  checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True): 6.1230
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 6.3472
+
+Window 6/8: val[405638:422022]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 7.2743
+  checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True): 6.6679
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 6.7357
+
+Window 7/8: val[450183:466567]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 7.3040
+  checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True): 6.6867
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 6.7522
+
+Window 8/8: val[499419:515803]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 7.3242
+  checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True): 6.7190
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 6.7939
+
+=== Overall (avg over 8 windows) ===
+     Segmentcheckpoints/stack100M_deepcheckpoints/stack100M_memorycheckpoints/stack100M_conv
+------------------------------------------
+       0K-1K    7.2851    6.9077    6.9661
+       1K-2K    7.3221    6.8019    6.8504
+       2K-3K    7.2740    6.7374    6.8062
+       3K-4K    7.2926    6.7173    6.8207
+       4K-5K    7.2801    6.7433    6.8185
+       5K-6K    7.3227    6.8365    6.8888
+       6K-7K    7.3112    6.7983    6.8356
+       7K-8K    7.3158    6.8110    6.8554
+       8K-9K    7.1686    6.6552    6.7659
+      9K-10K    7.2358    6.5830    6.7126
+     10K-11K    7.1844    6.6698    6.7608
+     11K-12K    7.2289    6.7467    6.8349
+     12K-13K    7.1723    6.5900    6.7271
+     13K-14K    7.3525    6.8675    6.9338
+     14K-15K    7.3331    6.9299    6.9780
+     15K-16K    7.2923    6.8203    6.8933
+------------------------------------------
+     OVERALL    7.2732    6.7635    6.8405
+
+Models:
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False)
+  checkpoints/model_stack100M_memory.pt (97.5M d=1024 L=11 mem=True)
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True)
+Saved eval_long/16384tok_8win.png
+
+Log: eval_long/16384tok_8win.txt

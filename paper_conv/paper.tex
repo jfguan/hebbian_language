@@ -29,7 +29,7 @@
 \maketitle
 
 \begin{abstract}
-Transformers and state space models (e.g.\ Mamba) use sophisticated mechanisms to mix information across sequence positions. We argue that \textbf{a minimal mixing backbone and an associative memory is all that is necessary}. We augment language models with a Hebbian memory---a matrix of outer-product associations updated at each token---and systematically ablate the backbone. \textbf{[TODO: update with final numbers]} On code generation: Mamba + Hebbian memory achieves 1.85 nats; replacing Mamba's recurrence with a 4-token depthwise convolution gives 1.94 nats at half the parameters; removing the backbone entirely still converges. The sequence model backbone contributes only local feature extraction; \textbf{the associative memory handles all long-range recall}.
+Transformers and state space models (e.g.\ Mamba) use sophisticated mechanisms to mix information across sequence positions. We argue that \textbf{a minimal mixing backbone and an associative memory is all that is necessary}. We augment language models with a Hebbian memory---a matrix of outer-product associations updated at each token---and systematically ablate the backbone. On The Stack (code), at 100M parameters: Mamba alone achieves 2.53 nats; adding Hebbian memory improves it to 1.82 nats; replacing Mamba's recurrence with a 4-token depthwise convolution gives 1.79 nats with no recurrence at all. The sequence model backbone contributes only local feature extraction; \textbf{the associative memory handles all long-range recall}.
 \end{abstract}
 
 \section{Introduction}
@@ -40,7 +40,7 @@ But what if associative memory, not the sequence model, is the primary mechanism
 
 A Hebbian associative memory~\citep{hebb1949organization}---a decaying outer-product matrix updated at each token---handles the first entirely. For the second, a depthwise convolution over just 4 tokens suffices. The resulting architecture contains no recurrence, no attention, and no gating beyond SiLU, yet matches SSM-based models at comparable parameter counts.
 
-Our key finding is stark: replacing Mamba with a 4-token convolution \textbf{[TODO: conv results pending]} matches performance at a fraction of the complexity, and a model with \emph{no} sequence mixing at all (pure linear projection + Hebbian) still converges to 3.18 nats. 
+Our key finding is stark: replacing Mamba with a 4-token convolution matches performance (1.79 vs 1.82 nats) at a fraction of the complexity, and a model with \emph{no} sequence mixing at all (pure linear projection + Hebbian) still converges to 3.18 nats. 
 
 The associative memory is not merely an augmentation---it is retrieval and computation in one mechanism. It \emph{is} the model.
 
@@ -190,6 +190,26 @@ Mamba (no Heb) & 15 & 102.1M & 2.53 \\
 \caption{Training curves on The Stack ($\sim$100M params, 4000 steps). Solid lines show smoothed training loss; markers show validation loss. Conv+Heb tracks Mamba+Heb throughout training, while Mamba without Hebbian memory lags by $\sim$0.7 nats.}
 \label{fig:training}
 \end{figure}
+
+\subsection{Recurrent Inference}
+
+We evaluate both models using their recurrent (autoregressive) form on 4096-token windows from The Stack validation set, averaging over 8 windows. Table~\ref{tab:recurrent} shows per-segment losses.
+
+\begin{table}[h]
+\caption{Recurrent inference on The Stack (4096 tokens, 8 windows). Loss in nats by position segment.}
+\label{tab:recurrent}
+\centering
+\begin{tabular}{lcccc|c}
+\toprule
+\textbf{Model} & \textbf{0--1K} & \textbf{1--2K} & \textbf{2--3K} & \textbf{3--4K} & \textbf{Overall} \\
+\midrule
+Mamba (no Heb) & 1.98 & 1.87 & 2.05 & 1.99 & 1.97 \\
+Conv+Heb & 1.46 & 1.35 & 1.47 & 1.44 & \textbf{1.43} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Conv+Heb maintains a 0.54-nat advantage across all positions, confirming that the training-time advantage transfers to autoregressive generation. Both models show stable loss across sequence length---neither degrades at longer positions.
 
 \subsection{Learned Memory Parameters}
 

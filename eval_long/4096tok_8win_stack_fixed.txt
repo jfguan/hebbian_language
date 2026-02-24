@@ -1,0 +1,52 @@
+Device: mps | 4096 tokens x 8 windows
+
+Loading cached stack tokenizer and token arrays...
+  Train: 14,471,760 tokens | Val: 855,692 tokens
+Window 1/8: val[73190:77286]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 3.1256
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 2.0803
+
+Window 2/8: val[76005:80101]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 3.0211
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 2.2631
+
+Window 3/8: val[368752:372848]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 1.1754
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 0.8785
+
+Window 4/8: val[373744:377840]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 1.7879
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 1.2485
+
+Window 5/8: val[557426:561522]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 1.4189
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 1.3049
+
+Window 6/8: val[593875:597971]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 1.3471
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 1.1708
+
+Window 7/8: val[659092:663188]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 2.0931
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 1.0696
+
+Window 8/8: val[731175:735271]
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False): 1.8111
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True): 1.4134
+
+=== Overall (avg over 8 windows) ===
+     Segmentcheckpoints/stack100M_deepcheckpoints/stack100M_conv
+--------------------------------
+       0K-1K    1.9771    1.4623
+       1K-2K    1.8711    1.3476
+       2K-3K    2.0503    1.4652
+       3K-4K    1.9916    1.4395
+--------------------------------
+     OVERALL    1.9725    1.4286
+
+Models:
+  checkpoints/model_stack100M_deep.pt (101.1M d=1024 L=15 mem=False)
+  checkpoints/model_stack100M_conv.pt (101.8M d=1024 L=12 mem=True)
+Saved eval_long/4096tok_8win_stack_fixed.png
+
+Log: eval_long/4096tok_8win_stack_fixed.txt

@@ -54,6 +54,7 @@ def main():
     p.add_argument("--d-conv", type=int, default=4)
     p.add_argument("--memory-alpha", type=float, default=0.03)
     p.add_argument("--grad-accum", type=int, default=1)
+    p.add_argument("--dataset", type=str, default="pg19", choices=["pg19", "code"])
     p.add_argument("--tag", type=str, default="code_conv")
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--compile", action="store_true")
@@ -70,7 +71,10 @@ def main():
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    from data_code import load_dataset, DataLoader
+    if args.dataset == "code":
+        from data_code import load_dataset, DataLoader
+    else:
+        from data import load_dataset, DataLoader
     ds = load_dataset()
     train_loader = DataLoader(ds["train"], args.batch_size, args.seq_len)
     val_loader = DataLoader(ds["val"], args.batch_size, args.seq_len)

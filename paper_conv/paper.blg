@@ -3,46 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: paper.aux
 The style file: plainnat.bst
 Database file #1: references.bib
-Warning--empty journal in codeparrot
-You've used 16 entries,
+You've used 15 entries,
             2773 wiz_defined-function locations,
-            667 strings with 7860 characters,
-and the built_in function-call counts, 8027 in all, are:
-= -- 627
-> -- 650
-< -- 6
-+ -- 220
-- -- 204
-* -- 670
-:= -- 1290
-add.period$ -- 49
-call.type$ -- 16
-change.case$ -- 114
-chr.to.int$ -- 16
-cite$ -- 33
-duplicate$ -- 345
-empty$ -- 589
-format.name$ -- 224
-if$ -- 1632
+            663 strings with 7736 characters,
+and the built_in function-call counts, 7721 in all, are:
+= -- 600
+> -- 640
+< -- 5
++ -- 216
+- -- 201
+* -- 655
+:= -- 1240
+add.period$ -- 45
+call.type$ -- 15
+change.case$ -- 110
+chr.to.int$ -- 15
+cite$ -- 30
+duplicate$ -- 326
+empty$ -- 559
+format.name$ -- 220
+if$ -- 1569
 int.to.chr$ -- 1
 int.to.str$ -- 1
-missing$ -- 16
-newline$ -- 89
-num.names$ -- 64
-pop$ -- 255
+missing$ -- 15
+newline$ -- 83
+num.names$ -- 60
+pop$ -- 245
 preamble$ -- 1
-purify$ -- 98
+purify$ -- 95
 quote$ -- 0
-skip$ -- 265
+skip$ -- 252
 stack$ -- 0
-substring$ -- 97
+substring$ -- 95
 swap$ -- 22
 text.length$ -- 0
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 176
-warning$ -- 1
-while$ -- 53
+type$ -- 165
+warning$ -- 0
+while$ -- 50
 width$ -- 0
-write$ -- 203
-(There was 1 warning)
+write$ -- 190
