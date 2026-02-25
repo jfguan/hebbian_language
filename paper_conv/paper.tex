@@ -18,18 +18,18 @@
 \newcommand{\mW}{\mathbf{W}}
 \newcommand{\mM}{\mathbf{M}}
 
-\title{Memory Is All You Need}
+\title{Associative Memory Is the Model}
 
 \author{
-  Jeff Guan \\
-  \texttt{jeff.guan0@gmail.com}
+  jfg \\
+  \texttt{fourierproject@gmail.com}
 }
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Transformers and state space models (e.g.\ Mamba) use sophisticated mechanisms to mix information across sequence positions. We argue that \textbf{a minimal mixing backbone and an associative memory is all that is necessary}. We augment language models with a Hebbian memory---a matrix of outer-product associations updated at each token---and systematically ablate the backbone. On The Stack (code), at 100M parameters: Mamba alone achieves 2.53 nats; adding Hebbian memory improves it to 1.82 nats; replacing Mamba's recurrence with a 4-token depthwise convolution gives 1.79 nats with no recurrence at all. The sequence model backbone contributes only local feature extraction; \textbf{the associative memory handles all long-range recall}.
+Transformers and state space models (e.g.\ Mamba) use sophisticated mechanisms to mix information across sequence positions. We argue that \textbf{associative memory does most of the work}, and the backbone needs only minimal local mixing. We augment language models with a Hebbian memory---a matrix of outer-product associations updated at each token---and systematically ablate the backbone. On The Stack (code), at 100M parameters: Mamba alone achieves 2.53 nats; adding Hebbian memory improves it to 1.82 nats; replacing Mamba's recurrence with a 4-token depthwise convolution gives 1.79 nats with no recurrence at all. At 124M parameters on FineWeb (natural language), Conv+Heb reaches 3.39 nats versus the nanoGPT 124M baseline of 3.28 nats---a small-scale gap that linear attention variants like RetNet close and surpass at larger scales. The sequence model backbone contributes only local feature extraction; \textbf{the associative memory handles nearly all long-range recall}.
 \end{abstract}
 
 \section{Introduction}
@@ -38,11 +38,11 @@ Transformers~\citep{vaswani2017attention} and state space models like Mamba~\cit
 
 But what if associative memory, not the sequence model, is the primary mechanism for long-range reasoning? In this work, we decompose language modeling into two capabilities: first, \textbf{associative binding}---storing and retrieving associations across arbitrary distances---and second, \textbf{local feature extraction}---combining adjacent tokens into useful representations.
 
-A Hebbian associative memory~\citep{hebb1949organization}---a decaying outer-product matrix updated at each token---handles the first entirely. For the second, a depthwise convolution over just 4 tokens suffices. The resulting architecture contains no recurrence, no attention, and no gating beyond SiLU, yet matches SSM-based models at comparable parameter counts.
+A Hebbian associative memory~\citep{hebb1949organization}---a decaying outer-product matrix updated at each token---handles the first almost entirely. For the second, a depthwise convolution over just 4 tokens suffices. The resulting architecture contains no recurrence, no attention, and no gating beyond SiLU, yet matches SSM-based models at comparable parameter counts and comes within 0.11 nats of nanoGPT on natural language.
 
-Our key finding is stark: replacing Mamba with a 4-token convolution matches performance (1.79 vs 1.82 nats) at a fraction of the complexity, and a model with \emph{no} sequence mixing at all (pure linear projection + Hebbian) still converges to 3.18 nats. 
+Our key finding is stark: replacing Mamba with a 4-token convolution matches performance (1.79 vs 1.82 nats) at a fraction of the complexity, and a model with \emph{no} sequence mixing at all (pure linear projection + Hebbian) still converges to 3.18 nats. On FineWeb at 124M parameters, Conv+Heb reaches 3.39 nats versus the nanoGPT baseline of 3.28---a gap consistent with other linear attention variants at this scale, which close at larger scales~\citep{sun2023retentive}.
 
-The associative memory is not merely an augmentation---it is retrieval and computation in one mechanism. It \emph{is} the model.
+The associative memory is not merely an augmentation---it is nearly the entire model.
 
 \section{Method}
 
@@ -193,7 +193,7 @@ Mamba (no Heb) & 15 & 102.1M & 2.53 \\
 
 \subsection{Recurrent Inference}
 
-We evaluate both models using their recurrent (autoregressive) form on 4096-token windows from The Stack validation set, averaging over 8 windows. Table~\ref{tab:recurrent} shows per-segment losses.
+We evaluate all three models using their recurrent (autoregressive) form on 4096-token windows from The Stack validation set, averaging over 8 windows. Table~\ref{tab:recurrent} shows per-segment losses.
 
 \begin{table}[h]
 \caption{Recurrent inference on The Stack (4096 tokens, 8 windows). Loss in nats by position segment.}
@@ -204,12 +204,13 @@ We evaluate both models using their recurrent (autoregressive) form on 4096-toke
 \textbf{Model} & \textbf{0--1K} & \textbf{1--2K} & \textbf{2--3K} & \textbf{3--4K} & \textbf{Overall} \\
 \midrule
 Mamba (no Heb) & 1.98 & 1.87 & 2.05 & 1.99 & 1.97 \\
-Conv+Heb & 1.46 & 1.35 & 1.47 & 1.44 & \textbf{1.43} \\
+Conv+Heb & 1.46 & 1.35 & 1.47 & 1.44 & 1.43 \\
+Mamba+Heb & 1.30 & 1.40 & 1.51 & 1.25 & \textbf{1.37} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Conv+Heb maintains a 0.54-nat advantage across all positions, confirming that the training-time advantage transfers to autoregressive generation. Both models show stable loss across sequence length---neither degrades at longer positions.
+Both memory-augmented models outperform Mamba alone by 0.5+ nats, confirming that the Hebbian memory drives the improvement. Mamba+Heb edges out Conv+Heb by 0.06 nats in recurrent mode---Mamba's recurrence provides a small benefit for autoregressive generation over long contexts, though the gap is minor compared to the 0.60-nat contribution of the memory itself. All models show stable loss across sequence length.
 
 \subsection{Learned Memory Parameters}
 
@@ -224,6 +225,23 @@ The Conv+Heb model learns per-layer memory strength $\alpha$ and decay $\gamma$.
 
 The $\alpha$ profile suggests middle layers perform the bulk of associative reasoning, while boundary layers focus on local features (early) and decoding (late). The decay hierarchy means early layers build broad context while later layers focus on recent associations.
 
+\subsection{FineWeb Scaling}
+
+To test generalization beyond code, we train a 124M-parameter Conv+Heb model on FineWeb~\citep{penedo2024fineweb}, a large-scale English web corpus, and compare against the nanoGPT 124M transformer baseline (3.28 nats).
+
+\paragraph{Baseline} The target is 3.28 nats, the validation loss achieved by Karpathy's nanoGPT 124M reproduction in llm.c~\citep{karpathy2024llmc}---a GPT-2-architecture transformer (12 layers, $D{=}768$, 12 heads) trained with AdamW on $\sim$10B tokens of FineWeb with GPT-2 tokenization (vocab 50,304) and sequence length 1024.
+
+\paragraph{Our setup} Conv+Heb uses 18 layers, $D{=}768$, expand factor 2, $d_\text{conv}{=}4$, with learned per-layer $\alpha$ (init 0.03) and $\gamma$ (init 0.99). Training uses AdamW ($\beta_1{=}0.9$, $\beta_2{=}0.95$), cosine schedule with peak $\text{lr}{=}6 \times 10^{-4}$ decaying to $6 \times 10^{-5}$, 500-step warmup, weight decay 0.1, gradient clipping at 1.0, and bf16 autocast. We train for 19,000 steps with 524K tokens per step ($\sim$10B tokens total), matching the baseline's token budget. Training was done on a single H100 GPU with \texttt{torch.compile}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{fineweb_curve.png}
+\caption{Conv+Heb (124M params) on FineWeb. The dashed line shows the nanoGPT 124M baseline (3.28 nats). Final validation loss: 3.39 nats, a gap of 0.11 nats.}
+\label{fig:fineweb}
+\end{figure}
+
+Conv+Heb reaches 3.39 nats versus the baseline of 3.28 nats---a gap of 0.11 nats. Both models use AdamW with comparable training recipes and the same token budget. The 0.11-nat difference is consistent with the small-scale behavior of linear attention variants (RetNet, GLA, DeltaNet), which show similar gaps at 124M--350M parameters but close and even surpass transformers at larger scales---RetNet at 6.7B achieves lower perplexity than its transformer baseline~\citep{sun2023retentive}. The gap likely reflects scale, not a fundamental limitation of the memory mechanism.
+
 \section{Discussion}
 
 \paragraph{Hebbian memory as the dominant mechanism}
@@ -235,7 +253,7 @@ This echoes complementary learning systems in neuroscience~\citep{mcclelland1995
 Our memory is an instance of fast weight programming~\citep{schmidhuber1992learning,ba2016using,schlag2021linear}. Linear attention~\citep{katharopoulos2020transformers} maintains the same outer-product matrix without decay; adding learnable decay connects to RetNet~\citep{sun2023retentive} and GLA~\citep{yang2024gated}. Our contribution is not the mechanism itself, but the finding that \emph{it alone, paired with a trivial backbone, suffices for competitive language modeling}.
 
 \paragraph{Limitations}
-Our experiments are limited to code (The Stack) at 100M parameters and $\sim$8M tokens. Natural language remains untested. The $O(D^2)$ memory state per layer limits scaling to very large hidden dimensions.
+Our 100M-parameter models are trained on only $\sim$8M tokens (The Stack), which is significantly undertrained by modern standards. The FineWeb experiment uses a full 10B-token budget but is limited to 124M parameters. Scaling to larger models and longer training would strengthen the comparison.
 
 \section{Related Work}
 
@@ -247,9 +265,9 @@ Our Hebbian memory follows the fast weight lineage~\citep{schmidhuber1992learnin
 
 \section{Conclusion}
 
-A 4-token depthwise convolution paired with Hebbian outer-product memory beats a 100M-parameter Mamba on code language modeling---with no recurrence. Removing the memory costs 0.71 nats. Removing the SSM costs nothing. The backbone is not the model---the memory is.
+A 4-token depthwise convolution paired with Hebbian outer-product memory matches a 100M-parameter Mamba+Heb on code language modeling---with no recurrence. Removing the memory costs 0.71 nats. Replacing the SSM with a trivial convolution costs 0.03 nats in parallel training and 0.06 nats in autoregressive inference. On FineWeb at 124M parameters, Conv+Heb reaches within 0.11 nats of nanoGPT 124M---a gap consistent with other linear attention variants that closes at larger scales.
 
-The complexity of modern SSMs and attention may be solving a problem---long-range sequence modeling---that is better addressed by explicit associative storage. Future architecture work should focus on the memory mechanism, not the backbone.
+The backbone is not irrelevant---the 0.11-nat gap on FineWeb shows it contributes something, likely precise short-range token interactions. But it is not the dominant mechanism. The bulk of language modeling performance comes from associative storage, and the complexity of modern SSMs and attention is disproportionate to their contribution. Future work should focus on the memory, not the backbone.
 
 \bibliography{references}
 \bibliographystyle{plainnat}
