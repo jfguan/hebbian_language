@@ -4,8 +4,6 @@
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{hyperref}
-\usepackage{algorithm}
-\usepackage{algorithmic}
 \usepackage{placeins}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,calc,fit}
@@ -16,7 +14,7 @@
 \newcommand{\vx}{\mathbf{x}}
 \newcommand{\vy}{\mathbf{y}}
 \newcommand{\mW}{\mathbf{W}}
-\newcommand{\mM}{\mathbf{M}}
+
 
 \title{Associative Memory Is the Model}
 
@@ -145,7 +143,7 @@ where $\vv_t = W_v \vx_t$ is the value projection, $\vk_t = \vx_t$ is the write 
 \end{equation}
 where $\alpha = \exp(\log \alpha_0)$ is a learned per-layer memory strength (initialized at 0.03) and $W_r$ is a learned read projection. A residual connection from the layer input is added on top. Both $\alpha$ and $\gamma$ are learned per layer.
 
-For training, we use a chunkwise parallel form with $O(TC \cdot D + T \cdot D^2)$ time; at inference, the recurrent form (Equations~\ref{eq:write}--\ref{eq:read}) runs in $O(D^2)$ per step.
+For training, we use a chunkwise parallel form with chunk size $C$, running in $O(TC \cdot D + T \cdot D^2)$ time; at inference, the recurrent form (Equations~\ref{eq:write}--\ref{eq:read}) runs in $O(D^2)$ per step.
 
 \subsection{Convolution Backbone}
 
@@ -159,14 +157,14 @@ where $W_p, W_g \in \mathbb{R}^{D \times ED}$ project to an expanded dimension (
 
 \section{Experiments}
 
-All models are $\sim$100M parameters (12 layers, $d_\text{model}{=}1024$), trained on The Stack for 4000 steps with sequence length 2048, batch size 1, cosine schedule with peak $3 \times 10^{-4}$ and 500-step warmup. We report average validation loss over steps 2000--4000 in nats (natural log cross-entropy). Validation is noisy at batch size 1, so we average across eval points.
+All models are $\sim$100M parameters ($d_\text{model}{=}1024$), trained on The Stack for 4000 steps with sequence length 2048, batch size 1 (no gradient accumulation), cosine schedule with peak $3 \times 10^{-4}$ and 500-step warmup. Layer counts vary to match parameter budgets (11--15 layers; see Table~\ref{tab:backbone}). We report average validation loss over steps 2000--4000 in nats (natural log cross-entropy). Validation is noisy at batch size 1, so we average across eval points.
 
 \subsection{Backbone Ablation}
 
-Our central experiment replaces the sequence modeling backbone while keeping the Hebbian memory identical. Table~\ref{tab:backbone} shows results.
+Our central experiment replaces the backbone while keeping the Hebbian memory identical. Both use learned decay $\gamma$ (init 0.99); Mamba+Heb uses a fixed $\alpha{=}0.04$, Conv+Heb uses learned per-layer $\alpha$ (init 0.03). Table~\ref{tab:backbone} shows results.
 
 \begin{table}[h]
-\caption{Backbone ablation on The Stack ($\sim$100M params, 4000 steps). Mamba+Heb uses fixed $\alpha{=}0.04$, $\gamma{=}0.99$. Conv+Heb uses learned per-layer $\alpha$ (init 0.03) and $\gamma$ (init 0.99).}
+\caption{Backbone ablation on The Stack ($\sim$100M params, 4000 steps).}
 \label{tab:backbone}
 \centering
 \begin{tabular}{lccc}
@@ -182,12 +180,12 @@ Mamba (no Heb) & 15 & 102.1M & 2.53 \\
 
 \textbf{Hebbian is the dominant mechanism.} Removing Hebbian memory from Mamba degrades performance from 1.82 to 2.53 nats ($+$0.71). The memory contributes far more than the backbone.
 
-\textbf{Conv matches Mamba with no recurrence.} Conv+Heb achieves 1.79 nats, matching Mamba+Heb at 1.82 nats. The convolution has zero recurrent state yet matches a full state space model.
+\textbf{Conv matches Mamba with no recurrence.} Conv+Heb achieves 1.79 nats, slightly better than Mamba+Heb at 1.82 nats. The convolution has no SSM recurrent state yet matches a full state space model.
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=\textwidth]{val_loss_comparison.png}
-\caption{Training curves on The Stack ($\sim$100M params, 4000 steps). Solid lines show smoothed training loss; markers show validation loss. Conv+Heb tracks Mamba+Heb throughout training, while Mamba without Hebbian memory lags by $\sim$0.7 nats.}
+\caption{Training curves on The Stack ($\sim$100M params, $\sim$8M tokens). Solid lines show smoothed training loss; markers show validation loss. Conv+Heb tracks Mamba+Heb throughout training, while Mamba without Hebbian memory lags by $\sim$0.7 nats.}
 \label{fig:training}
 \end{figure}
 
@@ -245,7 +243,7 @@ Conv+Heb reaches 3.39 nats versus the baseline of 3.28 nats---a gap of 0.11 nats
 \section{Discussion}
 
 \paragraph{Hebbian memory as the dominant mechanism}
-The $+$0.71 nat gap between Mamba and Mamba+Heb versus the negligible gap between Mamba+Heb and Conv+Heb points to a clear decomposition: the memory is doing the work. The outer-product matrix is content-addressable---retrieval is by similarity to the query, not by temporal position---making it fundamentally different from SSM recurrence, which compresses history into a fixed-size state vector.
+The $+$0.71 nat gap between Mamba and Mamba+Heb versus the 0.03-nat gap between Mamba+Heb and Conv+Heb points to a clear decomposition: the memory is doing the work. The outer-product matrix is content-addressable---retrieval is by similarity to the query, not by temporal position---making it fundamentally different from SSM recurrence, which compresses history into a fixed-size state vector.
 
 This echoes complementary learning systems in neuroscience~\citep{mcclelland1995complementary}: neocortex for slow feature learning, hippocampus for fast associative binding. The Hebbian memory plays the hippocampal role.
 

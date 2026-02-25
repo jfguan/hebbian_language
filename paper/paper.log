@@ -1,9 +1,9 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  22 FEB 2026 14:52
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.8)  25 FEB 2026 08:55
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**paper/paper.tex
-(./paper/paper.tex
+**paper.tex
+(./paper.tex
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
 (/usr/local/texlive/2025/texmf-dist/tex/latex/base/article.cls
@@ -23,7 +23,7 @@ File: size10.clo 2024/06/29 v1.4n Standard LaTeX file (size option)
 \belowcaptionskip=\skip50
 \bibindent=\dimen141
 )
-(paper/neurips_2024.sty
+(./neurips_2024.sty
 Package: neurips_2024 2024/03/31 NeurIPS 2024 submission/camera-ready style fil
 e
 
@@ -375,7 +375,7 @@ File: l3backend-pdftex.def 2024-05-08 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count304
 \l__pdf_internal_box=\box55
 )
-(paper/paper.aux)
+(./paper.aux)
 \openout1 = `paper.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 23.
@@ -464,7 +464,7 @@ LaTeX Font Info:    ... okay on input line 23.
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
 Package hyperref Info: Link coloring OFF on input line 23.
-(paper/paper.out) (paper/paper.out)
+(./paper.out) (./paper.out)
 \@outlinefile=\write3
 \openout3 = `paper.out'.
 
@@ -557,49 +557,103 @@ File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/capacity.png, id=89, 578.16pt x 361.35pt>
-File: figures/capacity.png Graphic file (type png)
-<use figures/capacity.png>
-Package pdftex.def Info: figures/capacity.png  used on input line 139.
-(pdftex.def)             Requested size: 298.11374pt x 186.32063pt.
+
+LaTeX Warning: File `figures/capacity.png' not found on input line 139.
+
+
+! Package pdftex.def Error: File `figures/capacity.png' not found: using draft 
+setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.139 ...dth=0.75\textwidth]{figures/capacity.png}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
 [3]
-<figures/prose_training.pdf, id=105, 505.89pt x 289.08pt>
-File: figures/prose_training.pdf Graphic file (type pdf)
-<use figures/prose_training.pdf>
-Package pdftex.def Info: figures/prose_training.pdf  used on input line 172.
-(pdftex.def)             Requested size: 337.86465pt x 193.06946pt.
+
+LaTeX Warning: File `figures/prose_training.pdf' not found on input line 172.
+
+
+! Package pdftex.def Error: File `figures/prose_training.pdf' not found: using 
+draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.172 ...85\textwidth]{figures/prose_training.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
-[4 <./figures/capacity.png>]
+[4]
 
-[5 <./figures/prose_training.pdf>]
-<figures/code_training_18M.pdf, id=175, 505.89pt x 289.08pt>
-File: figures/code_training_18M.pdf Graphic file (type pdf)
-<use figures/code_training_18M.pdf>
-Package pdftex.def Info: figures/code_training_18M.pdf  used on input line 241.
+[5]
 
-(pdftex.def)             Requested size: 337.86465pt x 193.06946pt.
-<eval_memory/eval_memory.png, id=177, 867.24pt x 578.16pt>
-File: eval_memory/eval_memory.png Graphic file (type png)
-<use eval_memory/eval_memory.png>
-Package pdftex.def Info: eval_memory/eval_memory.png  used on input line 267.
-(pdftex.def)             Requested size: 337.86465pt x 225.24329pt.
+LaTeX Warning: File `figures/code_training_18M.pdf' not found on input line 241
+.
+
+
+! Package pdftex.def Error: File `figures/code_training_18M.pdf' not found: usi
+ng draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.241 ...textwidth]{figures/code_training_18M.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
-[6 <./figures/code_training_18M.pdf>]
+[6]
+
+LaTeX Warning: File `eval_memory/eval_memory.png' not found on input line 267.
+
+
+! Package pdftex.def Error: File `eval_memory/eval_memory.png' not found: using
+ draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.267 ...5\textwidth]{eval_memory/eval_memory.png}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+
+[7]
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+
+[8]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 (hyperref)                removing `math shift' on input line 307.
@@ -613,81 +667,136 @@ Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 (hyperref)                removing `math shift' on input line 307.
 
 
-Underfull \vbox (badness 10000) has occurred while \output is active []
+LaTeX Warning: File `figures/code_training_100M.pdf' not found on input line 33
+7.
+
+
+! Package pdftex.def Error: File `figures/code_training_100M.pdf' not found: us
+ing draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.337 ...extwidth]{figures/code_training_100M.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
-[7 <./eval_memory/eval_memory.png>]
-<figures/code_training_100M.pdf, id=243, 505.89pt x 289.08pt>
-File: figures/code_training_100M.pdf Graphic file (type pdf)
-<use figures/code_training_100M.pdf>
-Package pdftex.def Info: figures/code_training_100M.pdf  used on input line 337
+[9]
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: File `figures/long_context_100M.pdf' not found on input line 381
 .
-(pdftex.def)             Requested size: 337.86465pt x 193.06946pt.
 
 
-LaTeX Warning: `h' float specifier changed to `ht'.
+! Package pdftex.def Error: File `figures/long_context_100M.pdf' not found: usi
+ng draft setting.
 
-<figures/long_context_100M.pdf, id=245, 578.16pt x 433.62pt>
-File: figures/long_context_100M.pdf Graphic file (type pdf)
-<use figures/long_context_100M.pdf>
-Package pdftex.def Info: figures/long_context_100M.pdf  used on input line 381.
-
-(pdftex.def)             Requested size: 357.73405pt x 268.29907pt.
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-
-[8 <./figures/code_training_100M.pdf>]
-<figures/decay_gamma.pdf, id=303, 505.89pt x 289.08pt>
-File: figures/decay_gamma.pdf Graphic file (type pdf)
-<use figures/decay_gamma.pdf>
-Package pdftex.def Info: figures/decay_gamma.pdf  used on input line 392.
-(pdftex.def)             Requested size: 357.73405pt x 204.42337pt.
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.381 ...textwidth]{figures/long_context_100M.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
-[9 <./figures/long_context_100M.pdf>]
-<figures/stack_training_100M.pdf, id=363, 505.89pt x 289.08pt>
-File: figures/stack_training_100M.pdf Graphic file (type pdf)
-<use figures/stack_training_100M.pdf>
-Package pdftex.def Info: figures/stack_training_100M.pdf  used on input line 42
-4.
-(pdftex.def)             Requested size: 337.86465pt x 193.06946pt.
+[10]
+
+[11]
+
+LaTeX Warning: File `figures/decay_gamma.pdf' not found on input line 392.
+
+
+! Package pdftex.def Error: File `figures/decay_gamma.pdf' not found: using dra
+ft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.392 ...h=0.9\textwidth]{figures/decay_gamma.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: File `figures/stack_training_100M.pdf' not found on input line 4
+24.
+
+
+! Package pdftex.def Error: File `figures/stack_training_100M.pdf' not found: u
+sing draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.424 ...xtwidth]{figures/stack_training_100M.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
-[10 <./figures/decay_gamma.pdf>]
-<figures/long_context_stack.pdf, id=415, 578.16pt x 433.62pt>
-File: figures/long_context_stack.pdf Graphic file (type pdf)
-<use figures/long_context_stack.pdf>
-Package pdftex.def Info: figures/long_context_stack.pdf  used on input line 466
-.
-(pdftex.def)             Requested size: 357.73405pt x 268.29907pt.
-
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-
-[11 <./figures/stack_training_100M.pdf>]
-
-[12 <./figures/long_context_stack.pdf>]
-
-[13
+[12
 
 ]
 
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+LaTeX Warning: File `figures/long_context_stack.pdf' not found on input line 46
+6.
+
+
+! Package pdftex.def Error: File `figures/long_context_stack.pdf' not found: us
+ing draft setting.
+
+See the pdftex.def package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.466 ...extwidth]{figures/long_context_stack.pdf}
+                                                  
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+
+[13]
+
 [14]
 
-[15] (paper/paper.aux)
+[15
+
+]
+
+[16]
+
+[17] (./paper.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
@@ -696,13 +805,13 @@ Package rerunfilecheck Info: File `paper.out' has not changed.
 (rerunfilecheck)             Checksum: E6B9BA5AC297C136B388517DACC46448;1813.
  ) 
 Here is how much of TeX's memory you used:
- 13445 strings out of 473190
- 209135 string characters out of 5715801
- 641968 words of memory out of 5000000
- 36206 multiletter control sequences out of 15000+600000
+ 13653 strings out of 473190
+ 216840 string characters out of 5715801
+ 641964 words of memory out of 5000000
+ 36413 multiletter control sequences out of 15000+600000
  601326 words of font info for 209 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,9n,79p,1340b,568s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,9n,79p,1334b,570s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 ></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb>
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><
@@ -716,10 +825,10 @@ ocal/texlive/2025/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb></usr/loc
 al/texlive/2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive
 /2025/texmf-dist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texm
 f-dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on paper/paper.pdf (15 pages, 803011 bytes).
+Output written on paper.pdf (17 pages, 212718 bytes).
 PDF statistics:
- 658 PDF objects out of 1000 (max. 8388607)
- 292 compressed objects within 3 object streams
- 90 named destinations out of 1000 (max. 500000)
- 46726 words of extra memory for PDF output out of 51595 (max. 10000000)
+ 311 PDF objects out of 1000 (max. 8388607)
+ 263 compressed objects within 3 object streams
+ 92 named destinations out of 1000 (max. 500000)
+ 46681 words of extra memory for PDF output out of 51595 (max. 10000000)
 

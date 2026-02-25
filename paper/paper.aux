@@ -31,32 +31,32 @@
 \newlabel{tab:prose_dynamics}{{1}{4}{PG-19 val loss (nats) at training checkpoints. Val estimated over 10 random batches (noisy). Final PPL: memory 11.91, deep 12.51, wide 13.32}{table.1}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces PG-19 val loss over training. Val estimated over 10 random batches per checkpoint (noisy).}}{5}{figure.2}\protected@file@percent }
 \newlabel{fig:prose_training}{{2}{5}{PG-19 val loss over training. Val estimated over 10 random batches per checkpoint (noisy)}{figure.2}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Per-segment PG-19 val loss at 16K context ($8\times $ training length).}}{5}{table.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Code (Headline Result)}{5}{subsection.3.4}\protected@file@percent }
-\newlabel{sec:code}{{3.4}{5}{Code (Headline Result)}{subsection.3.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Per-segment PG-19 val loss at 16K context ($8\times $ training length).}}{6}{table.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Code (Headline Result)}{6}{subsection.3.4}\protected@file@percent }
+\newlabel{sec:code}{{3.4}{6}{Code (Headline Result)}{subsection.3.4}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Python code val loss (nats) during training, with PPL at the final checkpoint.}}{6}{table.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Python code val loss over training (18M models, 6M tokens). Memory leads throughout.}}{6}{figure.3}\protected@file@percent }
-\newlabel{fig:code_training}{{3}{6}{Python code val loss over training (18M models, 6M tokens). Memory leads throughout}{figure.3}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces W ablation on 18M code model (8 windows $\times $ 16K tokens).}}{6}{table.4}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Per-segment loss for updating vs.\ frozen $W$ on the 18M code model (8 $\times $ 16K tokens). The gap widens with context as $W$ accumulates associations.}}{7}{figure.4}\protected@file@percent }
-\newlabel{fig:w_ablation}{{4}{7}{Per-segment loss for updating vs.\ frozen $W$ on the 18M code model (8 $\times $ 16K tokens). The gap widens with context as $W$ accumulates associations}{figure.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Model Size Scaling: 18M $\to $ 100M}{8}{subsection.3.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces 100M training dynamics on Python code. Bold marks each model's best checkpoint.}}{8}{table.5}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Python code val loss over training (100M models, 16.4M tokens). Memory leads at every checkpoint.}}{8}{figure.5}\protected@file@percent }
-\newlabel{fig:code_training_100M}{{5}{8}{Python code val loss over training (100M models, 16.4M tokens). Memory leads at every checkpoint}{figure.5}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Per-segment val loss at 16K context, 100M models (8 windows, 1K segments).}}{9}{table.6}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces 100M model per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens).}}{9}{figure.6}\protected@file@percent }
-\newlabel{fig:long_context_100M}{{6}{9}{100M model per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens)}{figure.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Python code val loss over training (18M models, 6M tokens). Memory leads throughout.}}{7}{figure.3}\protected@file@percent }
+\newlabel{fig:code_training}{{3}{7}{Python code val loss over training (18M models, 6M tokens). Memory leads throughout}{figure.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces W ablation on 18M code model (8 windows $\times $ 16K tokens).}}{7}{table.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Per-segment loss for updating vs.\ frozen $W$ on the 18M code model (8 $\times $ 16K tokens). The gap widens with context as $W$ accumulates associations.}}{8}{figure.4}\protected@file@percent }
+\newlabel{fig:w_ablation}{{4}{8}{Per-segment loss for updating vs.\ frozen $W$ on the 18M code model (8 $\times $ 16K tokens). The gap widens with context as $W$ accumulates associations}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Model Size Scaling: 18M $\to $ 100M}{9}{subsection.3.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces 100M training dynamics on Python code. Bold marks each model's best checkpoint.}}{9}{table.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Python code val loss over training (100M models, 16.4M tokens). Memory leads at every checkpoint.}}{10}{figure.5}\protected@file@percent }
+\newlabel{fig:code_training_100M}{{5}{10}{Python code val loss over training (100M models, 16.4M tokens). Memory leads at every checkpoint}{figure.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Per-segment val loss at 16K context, 100M models (8 windows, 1K segments).}}{11}{table.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces 100M model per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens).}}{11}{figure.6}\protected@file@percent }
+\newlabel{fig:long_context_100M}{{6}{11}{100M model per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens)}{figure.6}{}}
 \citation{kocetkov2022stack}
-\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Learned effective memory window per layer ($= 1/(1-\gamma )$) for the 18M and 100M code memory models.}}{10}{figure.7}\protected@file@percent }
-\newlabel{fig:decay_gamma}{{7}{10}{Learned effective memory window per layer ($= 1/(1-\gamma )$) for the 18M and 100M code memory models}{figure.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Dataset Breadth: Multilingual Code (The Stack)}{10}{subsection.3.6}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces The Stack 100M training dynamics. Bold marks each model's best checkpoint.}}{10}{table.7}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Multilingual code (The Stack) val loss over training, 100M models.}}{11}{figure.8}\protected@file@percent }
-\newlabel{fig:stack_training}{{8}{11}{Multilingual code (The Stack) val loss over training, 100M models}{figure.8}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Per-segment val loss at 16K context, Stack 100M (8 windows, 1K segments).}}{11}{table.8}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Stack 100M per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens).}}{12}{figure.9}\protected@file@percent }
-\newlabel{fig:long_context_stack}{{9}{12}{Stack 100M per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens)}{figure.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Learned effective memory window per layer ($= 1/(1-\gamma )$) for the 18M and 100M code memory models.}}{12}{figure.7}\protected@file@percent }
+\newlabel{fig:decay_gamma}{{7}{12}{Learned effective memory window per layer ($= 1/(1-\gamma )$) for the 18M and 100M code memory models}{figure.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Dataset Breadth: Multilingual Code (The Stack)}{12}{subsection.3.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces The Stack 100M training dynamics. Bold marks each model's best checkpoint.}}{13}{table.7}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Multilingual code (The Stack) val loss over training, 100M models.}}{13}{figure.8}\protected@file@percent }
+\newlabel{fig:stack_training}{{8}{13}{Multilingual code (The Stack) val loss over training, 100M models}{figure.8}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Per-segment val loss at 16K context, Stack 100M (8 windows, 1K segments).}}{14}{table.8}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Stack 100M per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens).}}{14}{figure.9}\protected@file@percent }
+\newlabel{fig:long_context_stack}{{9}{14}{Stack 100M per-segment val loss and gap over 16K context. Vertical dotted line marks training length (2K tokens)}{figure.9}{}}
 \citation{ba2016using}
 \citation{schmidhuber1992learning}
 \citation{graves2014neural}
@@ -72,12 +72,12 @@
 \citation{schlag2021linear}
 \citation{yang2024deltanet}
 \citation{duvvuri2026lucid}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Related Work}{13}{section.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Fast weights.}{13}{section*.16}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{External and associative memory.}{13}{section*.17}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Memory in SSMs.}{13}{section*.18}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Linear recurrences and the delta rule.}{13}{section*.19}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5}Conclusion}{13}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Related Work}{15}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Fast weights.}{15}{section*.16}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{External and associative memory.}{15}{section*.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Memory in SSMs.}{15}{section*.18}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Linear recurrences and the delta rule.}{15}{section*.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Conclusion}{15}{section.5}\protected@file@percent }
 \bibcite{elhage2022superposition}{{1}{}{{}}{{}}}
 \bibcite{ba2016using}{{2}{2016}{{Ba et~al.}}{{}}}
 \bibcite{behrouz2024titans}{{3}{}{{}}{{}}}
@@ -97,4 +97,4 @@
 \bibcite{yang2024deltanet}{{17}{}{{}}{{}}}
 \bibcite{schlag2021linear}{{18}{2021}{{Schlag et~al.}}{{}}}
 \providecommand\NAT@force@numbers{}\NAT@force@numbers
-\gdef \@abspage@last{15}
+\gdef \@abspage@last{17}
