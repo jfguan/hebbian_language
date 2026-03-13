@@ -1,3 +1,12 @@
+"""Unified training script.
+
+Usage:
+    uv run train.py configs/hebbian_small.yaml
+    uv run train.py configs/hebbian_mamba_100M.yaml --dataset stack --tag my_run
+    uv run train.py configs/hebbian_100M.yaml --resume checkpoints/ckpt_hebbian_100M_step2000.pt
+    uv run train.py configs/mamba_100M.yaml --compile
+"""
+
 import argparse
 import json
 import math
@@ -5,23 +14,47 @@ import os
 import time
 
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
+import yaml
 
-from model import Config, HebbianMamba
 
+# ---------------------------------------------------------------------------
+# Model registry
+# ---------------------------------------------------------------------------
+
+def build_model(cfg):
+    """Instantiate a model from a config dict."""
+    model_type = cfg.pop("model")
+    if model_type == "hebbian_mamba":
+        from models.hebbian_mamba import Config, HebbianMamba
+        model_cfg = Config(**{k: v for k, v in cfg.items() if hasattr(Config, k)})
+        return HebbianMamba(model_cfg), model_cfg, "HebbianMamba"
+    elif model_type == "mamba":
+        from models.mamba import Config, Mamba
+        model_cfg = Config(**{k: v for k, v in cfg.items() if hasattr(Config, k)})
+        return Mamba(model_cfg), model_cfg, "Mamba"
+    elif model_type == "hebbian":
+        from models.hebbian import Config, HebbianConv
+        model_cfg = Config(**{k: v for k, v in cfg.items() if hasattr(Config, k)})
+        return HebbianConv(model_cfg), model_cfg, "HebbianConv"
+    else:
+        raise ValueError(f"Unknown model type: {model_type!r}")
+
+
+# ---------------------------------------------------------------------------
+# Training utilities
+# ---------------------------------------------------------------------------
 
 def cosine_lr(step, warmup, total, max_lr, min_lr):
     if step < warmup:
         return max_lr * (step + 1) / warmup
-    t = (step - warmup) / (total - warmup)
+    t = (step - warmup) / max(total - warmup, 1)
     return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * t))
 
 
-def configure_optimizers(model, lr, weight_decay):
-    """Separate weight decay for 2D params only (nanoGPT style)."""
+def configure_optimizers(model, lr, weight_decay=0.1):
     decay_params = [p for p in model.parameters() if p.dim() >= 2]
     nodecay_params = [p for p in model.parameters() if p.dim() < 2]
     optim_groups = [
@@ -53,12 +86,12 @@ def sample(model, encode, decode, device, prompt="", n=200, temperature=0.8):
     model.eval()
     states, tokens = None, []
     prompt_ids = encode(prompt) if prompt else [0]
-    # feed prompt tokens through model to build state
     for tok_id in prompt_ids[:-1]:
         token = torch.tensor([tok_id], dtype=torch.long, device=device)
         _, states = model.step(token, states=states)
         states = [
             {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in s.items()}
+            if isinstance(s, dict) else s
             for s in states
         ]
     token = torch.tensor([prompt_ids[-1]], dtype=torch.long, device=device)
@@ -66,6 +99,7 @@ def sample(model, encode, decode, device, prompt="", n=200, temperature=0.8):
         logits, states = model.step(token, states=states)
         states = [
             {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in s.items()}
+            if isinstance(s, dict) else s
             for s in states
         ]
         token = torch.multinomial(
@@ -94,41 +128,70 @@ def plot_losses(history, tag):
     plt.close(fig)
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset", type=str, default="pg19", choices=["pg19", "code"])
-    p.add_argument("--no-memory", action="store_true")
-    p.add_argument("--dual-memory", action="store_true")
+    p.add_argument("config", type=str, help="Path to YAML config file")
     p.add_argument("--resume", type=str, default=None)
-    p.add_argument("--steps", type=int, default=1465)
-    p.add_argument("--schedule-steps", type=int, default=1465)
-    p.add_argument("--batch-size", type=int, default=2)
-    p.add_argument("--seq-len", type=int, default=2048)
-    p.add_argument("--lr", type=float, default=6e-4)
-    p.add_argument("--eval-interval", type=int, default=100)
-    p.add_argument("--ckpt-interval", type=int, default=500)
-    p.add_argument("--n-layers", type=int, default=8)
-    p.add_argument("--d-model", type=int, default=512)
-    p.add_argument("--d-state", type=int, default=16)
-    p.add_argument("--tag", type=str, default=None)
-    p.add_argument("--memory-alpha", type=float, default=0.03)
-    p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--compile", action="store_true")
+    # Any config value can be overridden from the command line
+    p.add_argument("--dataset", type=str, default=None)
+    p.add_argument("--tag", type=str, default=None)
+    p.add_argument("--steps", type=int, default=None)
+    p.add_argument("--total-steps", type=int, default=None)
+    p.add_argument("--batch-size", type=int, default=None)
+    p.add_argument("--seq-len", type=int, default=None)
+    p.add_argument("--lr", type=float, default=None)
+    p.add_argument("--warmup", type=int, default=None)
+    p.add_argument("--grad-accum", type=int, default=None)
+    p.add_argument("--eval-interval", type=int, default=None)
+    p.add_argument("--ckpt-interval", type=int, default=None)
+    p.add_argument("--n-layers", type=int, default=None)
+    p.add_argument("--d-model", type=int, default=None)
+    p.add_argument("--memory-alpha", type=float, default=None)
     args = p.parse_args()
 
-    use_memory = not args.no_memory
-    dual_memory = args.dual_memory
-    dataset_prefix = "code_" if args.dataset == "code" else ""
-    tag = args.tag or (
-        f"{dataset_prefix}memory_dual" if dual_memory
-        else f"{dataset_prefix}memory" if use_memory
-        else f"{dataset_prefix}no_memory"
-    )
+    # Load config YAML
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+    # Ensure numeric types (YAML may parse scientific notation as strings)
+    for k in ("lr", "memory_alpha"):
+        if k in cfg and isinstance(cfg[k], str):
+            cfg[k] = float(cfg[k])
+
+    # CLI overrides
+    overrides = {
+        "dataset": args.dataset, "tag": args.tag, "steps": args.steps,
+        "total_steps": args.total_steps, "batch_size": args.batch_size,
+        "seq_len": args.seq_len, "lr": args.lr, "warmup": args.warmup,
+        "grad_accum": args.grad_accum, "eval_interval": args.eval_interval,
+        "ckpt_interval": args.ckpt_interval, "n_layers": args.n_layers,
+        "d_model": args.d_model, "memory_alpha": args.memory_alpha,
+    }
+    for k, v in overrides.items():
+        if v is not None:
+            cfg[k] = v
+
+    # Extract training params
+    tag = cfg.pop("tag")
+    dataset = cfg.pop("dataset", "pg19")
+    steps = cfg.pop("steps", 1465)
+    total_steps = cfg.pop("total_steps", steps)
+    batch_size = cfg.pop("batch_size", 2)
+    seq_len = cfg.pop("seq_len", 2048)
+    lr = cfg.pop("lr", 6e-4)
+    warmup = cfg.pop("warmup", 20)
+    grad_accum = cfg.pop("grad_accum", 1)
+    eval_interval = cfg.pop("eval_interval", 100)
+    ckpt_interval = cfg.pop("ckpt_interval", 500)
+
+    # Device
     device = (
-        "mps"
-        if torch.backends.mps.is_available()
-        else "cuda"
-        if torch.cuda.is_available()
+        "mps" if torch.backends.mps.is_available()
+        else "cuda" if torch.cuda.is_available()
         else "cpu"
     )
     device_type = device.split(":")[0]
@@ -137,24 +200,26 @@ def main():
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    if args.dataset == "code":
-        from data_code import load_dataset, DataLoader
-    else:
-        from data import load_dataset, DataLoader
-    ds = load_dataset()
-    train_loader = DataLoader(ds["train"], args.batch_size, args.seq_len)
-    val_loader = DataLoader(ds["val"], args.batch_size, args.seq_len)
+    # Data
+    from data import load_dataset, DataLoader
+    ds = load_dataset(dataset)
+    train_loader = DataLoader(ds["train"], batch_size, seq_len)
+    val_loader = DataLoader(ds["val"], batch_size, seq_len)
 
-    cfg = Config(vocab_size=ds["vocab_size"], use_memory=use_memory, dual_memory=dual_memory, d_model=args.d_model, n_layers=args.n_layers, d_state=args.d_state, memory_alpha=args.memory_alpha)
-    model = HebbianMamba(cfg).to(device)
+    # Model
+    cfg["vocab_size"] = ds["vocab_size"]
+    model_type = cfg["model"]  # keep for printing
+    model, model_cfg, model_class = build_model(cfg)
+    model = model.to(device)
     n_params = sum(p.numel() for p in model.parameters())
 
     if args.compile:
         print("Compiling model...")
         model = torch.compile(model)
 
-    optimizer = configure_optimizers(model, args.lr, weight_decay=0.1)
+    optimizer = configure_optimizers(model, lr)
 
+    # Resume
     start_step = 0
     if args.resume:
         ckpt = torch.load(args.resume, map_location=device, weights_only=False)
@@ -169,31 +234,29 @@ def main():
         start_step = ckpt.get("step", 0)
         print(f"Resumed from {args.resume} at step {start_step}")
 
-    total_steps = start_step + args.steps
-    min_lr = args.lr * 0.1
-    T = args.seq_len
-    grad_accum = args.grad_accum
-    print(
-        f"{n_params / 1e6:.1f}M params | memory={use_memory} | {device}"
-    )
-    print(
-        f"Steps {start_step} -> {total_steps} | B={args.batch_size}x{grad_accum} T={T} lr={args.lr}"
-    )
+    end_step = min(start_step + steps, total_steps)
+    min_lr = lr * 0.1
+    tokens_per_step = batch_size * seq_len * grad_accum
+
+    print(f"{model_class} | {n_params/1e6:.1f}M params | {device}")
+    print(f"Steps {start_step} -> {end_step} (schedule: {total_steps}) | B={batch_size}x{grad_accum} T={seq_len} lr={lr}")
 
     os.makedirs("checkpoints", exist_ok=True)
-    log_path = f"checkpoints/history_{tag}.jsonl"
+    log_path = f"histories/history_{tag}.jsonl"
+    os.makedirs("histories", exist_ok=True)
     log_file = open(log_path, "a" if args.resume else "w")
 
+    step = start_step
     try:
-        for step in range(start_step, total_steps):
+        for step in range(start_step, end_step):
             t0 = time.time()
-            lr = cosine_lr(step, 20, args.schedule_steps, args.lr, min_lr)
+            cur_lr = cosine_lr(step, warmup, total_steps, lr, min_lr)
             for pg in optimizer.param_groups:
-                pg["lr"] = lr
+                pg["lr"] = cur_lr
 
             optimizer.zero_grad(set_to_none=True)
             loss_accum = 0.0
-            for micro in range(grad_accum):
+            for _ in range(grad_accum):
                 x, y = train_loader.batch()
                 x, y = x.to(device), y.to(device)
                 with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
@@ -206,23 +269,25 @@ def main():
             optimizer.step()
 
             dt = time.time() - t0
-            tokens_seen = (step + 1) * args.batch_size * args.seq_len * grad_accum
+            tokens_seen = (step + 1) * tokens_per_step
             entry = {"step": step, "train_loss": loss_accum, "tokens": tokens_seen}
             print(
-                f"step {step:5d} | loss {loss_accum:.4f} | ppl {math.exp(loss_accum):8.2f} | lr {lr:.2e} | {dt * 1000:.0f}ms",
+                f"step {step:5d} | loss {loss_accum:.4f} | ppl {math.exp(loss_accum):8.2f} | lr {cur_lr:.2e} | {dt*1000:.0f}ms",
                 flush=True,
             )
 
-            if step > 0 and step % args.eval_interval == 0:
+            if step > 0 and step % eval_interval == 0:
                 vl = evaluate(model, val_loader, device)
                 entry["val_loss"] = vl
                 print(f"  val loss {vl:.4f} | val ppl {math.exp(vl):.2f}", flush=True)
 
-            if step > 0 and step % args.ckpt_interval == 0:
+            if step > 0 and step % ckpt_interval == 0:
                 raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
-                torch.save({"model": raw_model.state_dict(), "optimizer": optimizer.state_dict(),
-                            "config": cfg, "step": step},
-                           f"checkpoints/ckpt_{tag}_step{step}.pt")
+                torch.save(
+                    {"model": raw_model.state_dict(), "optimizer": optimizer.state_dict(),
+                     "config": model_cfg, "model_class": model_class, "step": step},
+                    f"checkpoints/ckpt_{tag}_step{step}.pt",
+                )
                 print(f"  -> checkpoints/ckpt_{tag}_step{step}.pt", flush=True)
 
             log_file.write(json.dumps(entry) + "\n")
@@ -230,24 +295,20 @@ def main():
     except KeyboardInterrupt:
         print(f"\nStopped at step {step}.")
 
+    # Final save
     raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
     vl = evaluate(model, val_loader, device)
-    log_file.write(
-        json.dumps({"step": step, "train_loss": entry["train_loss"], "val_loss": vl})
-        + "\n"
-    )
+    log_file.write(json.dumps({"step": step, "train_loss": loss_accum, "val_loss": vl, "tokens": (step + 1) * tokens_per_step}) + "\n")
     log_file.close()
     print(f"\nFinal val loss: {vl:.4f} | ppl {math.exp(vl):.2f}")
-    prompt = "def fizzbuzz(n):\n" if args.dataset == "code" else ""
-    print(f"Sample:\n{sample(raw_model, ds['encode'], ds['decode'], device, prompt=prompt, n=300)}")
+
+    if "encode" in ds and "decode" in ds:
+        prompt = "def fizzbuzz(n):\n" if dataset in ("code", "stack") else ""
+        print(f"Sample:\n{sample(raw_model, ds['encode'], ds['decode'], device, prompt=prompt, n=300)}")
 
     torch.save(
-        {
-            "model": raw_model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "config": cfg,
-            "step": step + 1,
-        },
+        {"model": raw_model.state_dict(), "optimizer": optimizer.state_dict(),
+         "config": model_cfg, "model_class": model_class, "step": step + 1},
         f"checkpoints/model_{tag}.pt",
     )
     history = [json.loads(line) for line in open(log_path)]

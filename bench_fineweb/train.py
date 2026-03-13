@@ -1,8 +1,11 @@
-"""Train Conv+Heb on FineWeb to match GPT-2 124M (target: 3.28 val loss).
+"""Train Conv+Heb on FineWeb (cloud GPU).
 
-Usage:
-    uv run bench_fineweb/train.py
-    uv run bench_fineweb/train.py --steps 5000 --batch-size 8 --grad-accum 5
+Target: ≤3.28 val loss (GPT-2 124M baseline on FineWeb).
+
+Setup on Lambda:
+    pip install torch numpy matplotlib huggingface_hub
+    python bench_fineweb/data.py
+    python bench_fineweb/train_cloud.py
 """
 
 import argparse
@@ -55,7 +58,7 @@ def evaluate(model, val_loader, device, n_batches=20):
     for _ in range(n_batches):
         x, y = val_loader.batch()
         x, y = x.to(device), y.to(device)
-        with torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             _, loss = model(x, y)
         losses.append(loss.item())
     model.train()
@@ -80,39 +83,31 @@ def plot_losses(history, tag):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--steps", type=int, default=24000)
-    p.add_argument("--batch-size", type=int, default=2)
+    p.add_argument("--steps", type=int, default=19000)
+    p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--seq-len", type=int, default=1024)
-    p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--lr", type=float, default=6e-4)
     p.add_argument("--warmup", type=int, default=500)
-    p.add_argument("--schedule-steps", type=int, default=24000,
-                   help="Total steps for cosine schedule (set higher for cloud runs)")
-    p.add_argument("--eval-interval", type=int, default=500)
-    p.add_argument("--ckpt-interval", type=int, default=5000)
+    p.add_argument("--eval-interval", type=int, default=250)
+    p.add_argument("--ckpt-interval", type=int, default=2000)
     p.add_argument("--n-layers", type=int, default=18)
     p.add_argument("--d-model", type=int, default=768)
     p.add_argument("--d-conv", type=int, default=4)
     p.add_argument("--memory-alpha", type=float, default=0.03)
-    p.add_argument("--grad-accum", type=int, default=1)
-    p.add_argument("--tag", type=str, default="fineweb")
+    p.add_argument("--grad-accum", type=int, default=16)
+    p.add_argument("--tag", type=str, default="cloud")
     p.add_argument("--resume", type=str, default=None)
-    p.add_argument("--compile", action="store_true")
+    p.add_argument("--compile", action="store_true", default=True)
     args = p.parse_args()
 
-    device = (
-        "mps"
-        if torch.backends.mps.is_available()
-        else "cuda"
-        if torch.cuda.is_available()
-        else "cpu"
-    )
-    device_type = device.split(":")[0]
-    torch.manual_seed(42)
-    if device_type == "cuda":
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+    # 32 * 16 * 1024 = 524,288 tokens/step (~10B tokens in 19K steps)
 
-    # Load data
+    assert torch.cuda.is_available(), "Cloud training requires CUDA"
+    device = "cuda"
+    torch.manual_seed(42)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
     import sys
     sys.path.insert(0, os.path.dirname(__file__))
     from data import load_dataset, DataLoader
@@ -132,7 +127,7 @@ def main():
     n_params = sum(p.numel() for p in model.parameters())
     print(f"{n_params / 1e6:.1f}M params | {args.n_layers}L d={args.d_model} | {device}")
 
-    if args.compile and device_type == "cuda":
+    if args.compile:
         print("Compiling model...")
         model = torch.compile(model)
 
@@ -149,20 +144,19 @@ def main():
         print(f"Resumed from {args.resume} at step {start_step}")
 
     total_steps = start_step + args.steps
-    schedule_steps = args.schedule_steps
     min_lr = args.lr * 0.1
     grad_accum = args.grad_accum
     tokens_per_step = args.batch_size * args.seq_len * grad_accum
 
     print(f"Steps {start_step} -> {total_steps} | B={args.batch_size}x{grad_accum} T={args.seq_len} lr={args.lr}")
-    print(f"Tokens/step: {tokens_per_step:,} | Target: 3.28 val loss")
+    print(f"Tokens/step: {tokens_per_step:,} | Total: {total_steps * tokens_per_step / 1e9:.1f}B tokens")
+    print(f"Target: 3.28 val loss")
 
     ckpt_dir = "bench_fineweb/checkpoints"
     os.makedirs(ckpt_dir, exist_ok=True)
     log_path = f"{ckpt_dir}/history_{args.tag}.jsonl"
     log_file = open(log_path, "a" if args.resume else "w")
 
-    # Initial eval
     vl = evaluate(model, val_loader, device)
     print(f"  init val loss {vl:.4f}")
 
@@ -171,7 +165,7 @@ def main():
     try:
         for step in range(start_step, total_steps):
             t0 = time.time()
-            lr = cosine_lr(step, args.warmup, schedule_steps, args.lr, min_lr)
+            lr = cosine_lr(step, args.warmup, total_steps, args.lr, min_lr)
             for pg in optimizer.param_groups:
                 pg["lr"] = lr
 
@@ -180,7 +174,7 @@ def main():
             for _ in range(grad_accum):
                 x, y = train_loader.batch()
                 x, y = x.to(device), y.to(device)
-                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     _, loss = model(x, y)
                 loss = loss / grad_accum
                 loss.backward()
@@ -192,16 +186,17 @@ def main():
             dt = time.time() - t0
             tokens_seen = (step + 1) * tokens_per_step
             entry = {"step": step, "train_loss": loss_accum, "tokens": tokens_seen}
-            print(
-                f"step {step:5d} | loss {loss_accum:.4f} | lr {lr:.2e}"
-                f" | {dt * 1000:.0f}ms | {tokens_seen / 1e6:.1f}M tok",
-                flush=True,
-            )
+            if step % 10 == 0:
+                print(
+                    f"step {step:5d} | loss {loss_accum:.4f} | lr {lr:.2e}"
+                    f" | {dt * 1000:.0f}ms | {tokens_seen / 1e9:.2f}B tok",
+                    flush=True,
+                )
 
             if step > 0 and step % args.eval_interval == 0:
                 vl = evaluate(model, val_loader, device)
                 entry["val_loss"] = vl
-                status = "REACHED TARGET" if vl <= 3.28 else ""
+                status = "*** REACHED TARGET ***" if vl <= 3.28 else ""
                 print(f"  val loss {vl:.4f} {status}", flush=True)
 
             if step > 0 and step % args.ckpt_interval == 0:
@@ -231,7 +226,7 @@ def main():
         + "\n"
     )
     log_file.close()
-    print(f"\nFinal val loss: {vl:.4f} {'REACHED TARGET' if vl <= 3.28 else ''}")
+    print(f"\nFinal val loss: {vl:.4f} {'*** REACHED TARGET ***' if vl <= 3.28 else ''}")
 
     final_path = f"{ckpt_dir}/model_{args.tag}.pt"
     torch.save(

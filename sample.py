@@ -8,7 +8,7 @@ Usage:
 
 import argparse
 import torch
-from model import HebbianMamba
+from models.hebbian_mamba import HebbianMamba
 
 
 PROMPTS = {
@@ -62,13 +62,9 @@ def main():
         else:
             args.dataset = "prose"
 
-    if args.dataset == "stack":
-        from data_stack import load_dataset
-    elif args.dataset == "code":
-        from data_code import load_dataset
-    else:
-        from data import load_dataset
-    ds = load_dataset()
+    from data import load_dataset
+    dataset_name = "pg19" if args.dataset == "prose" else args.dataset
+    ds = load_dataset(dataset_name)
 
     device = "mps" if torch.backends.mps.is_available() else \
              "cuda" if torch.cuda.is_available() else "cpu"
