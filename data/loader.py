@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ from datasets import load_dataset as hf_load, interleave_datasets
 import numpy as np
 import numpy.typing as npt
 import torch
+from tokenizers import Tokenizer, models, pre_tokenizers, trainers
 
 
 @dataclass
@@ -116,13 +116,18 @@ class Dataset:
         train: npt.NDArray[np.uint16],
         val: npt.NDArray[np.uint16],
         vocab_size: int,
-        tokenizer: BPETokenizer,
+        tokenizer: Tokenizer,
     ) -> None:
         self.train = train
         self.val = val
         self.vocab_size = vocab_size
-        self.encode = tokenizer.encode
-        self.decode = tokenizer.decode
+        self._tokenizer = tokenizer
+
+    def encode(self, text: str) -> list[int]:
+        return self._tokenizer.encode(text).ids
+
+    def decode(self, ids: list[int]) -> str:
+        return self._tokenizer.decode(ids)
 
 
 def load_dataset(name: str = "pg19") -> Dataset:
@@ -146,22 +151,26 @@ def _load_cached_dataset(cfg: DatasetConfig, name: str) -> Dataset | None:
     val_path = os.path.join(cfg.cache_dir, "val_tokens.npy")
 
     # Check all cached files exist
-    if (
+    if not (
         os.path.exists(tokenizer_path)
         and os.path.exists(train_path)
         and os.path.exists(val_path)
     ):
-        tokenizer = BPETokenizer.load(tokenizer_path)
-        if tokenizer.vocab_size == cfg.vocab_size:
-            train_data = np.load(train_path)
-            val_data = np.load(val_path)
-            return Dataset(train_data, val_data, cfg.vocab_size, tokenizer)
+        return None
 
-        print(
-            f"vocab_size mismatch ({tokenizer.vocab_size} vs {cfg.vocab_size}), retraining"
-        )
+    try:
+        tokenizer = Tokenizer.from_file(tokenizer_path)
+    except Exception:
+        print("Incompatible tokenizer cache, retraining")
+        return None
 
-    return None
+    if tokenizer.get_vocab_size() != cfg.vocab_size:
+        print(f"vocab_size mismatch ({tokenizer.get_vocab_size()} vs {cfg.vocab_size}), retraining")
+        return None
+
+    train_data = np.load(train_path)
+    val_data = np.load(val_path)
+    return Dataset(train_data, val_data, cfg.vocab_size, tokenizer)
 
 
 def _download_dataset(cfg: DatasetConfig) -> Dataset:
@@ -171,14 +180,13 @@ def _download_dataset(cfg: DatasetConfig) -> Dataset:
 
     # Train BPE tokenizer on subset of training text
     tokenizer_path = os.path.join(cfg.cache_dir, "tokenizer.json")
-
     bpe_sample = train_text[: cfg.bpe_train_chars]
-    print(
-        f"Training BPE tokenizer (vocab_size={cfg.vocab_size}) on {len(bpe_sample):,} chars..."
-    )
+    print(f"Training BPE tokenizer (vocab_size={cfg.vocab_size}) on {len(bpe_sample):,} chars...")
 
-    tokenizer = BPETokenizer(vocab_size=cfg.vocab_size)
-    tokenizer.train(bpe_sample)
+    tokenizer = Tokenizer(models.BPE())
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    trainer = trainers.BpeTrainer(vocab_size=cfg.vocab_size, special_tokens=[])
+    tokenizer.train_from_iterator([bpe_sample], trainer=trainer)
     tokenizer.save(tokenizer_path)
 
     print(f"Saved tokenizer to {tokenizer_path}")
@@ -195,80 +203,14 @@ def _download_dataset(cfg: DatasetConfig) -> Dataset:
     return Dataset(train_data, val_data, cfg.vocab_size, tokenizer)
 
 
-def _tokenize(tokenizer: BPETokenizer, text: str, label: str) -> npt.NDArray[np.uint16]:
+def _tokenize(tokenizer: Tokenizer, text: str, label: str) -> npt.NDArray[np.uint16]:
     print(f"Tokenizing {label} set...")
-    data = np.array(tokenizer.encode(text), dtype=np.uint16)
+    data = np.array(tokenizer.encode(text).ids, dtype=np.uint16)
 
-    # Print stats
     n_chars, n_tokens = len(text), len(data)
     ratio = n_chars / n_tokens
     print(f"  {n_chars:,} chars -> {n_tokens:,} tokens ({ratio:.1f}x compression)")
     return data
-
-
-class BPETokenizer:
-    def __init__(self, vocab_size: int = 512) -> None:
-        self.vocab_size = vocab_size
-        self.merges: list[tuple[int, int]] = []
-        self.vocab: dict[int, bytes] = {}
-
-    def train(self, text: str) -> None:
-        data = list(text.encode("utf-8"))
-        self.vocab = {i: bytes([i]) for i in range(256)}
-        num_merges = self.vocab_size - 256
-        ids = list(data)
-        for i in range(num_merges):
-            counts: dict[tuple[int, int], int] = {}
-            for a, b in zip(ids, ids[1:]):
-                counts[(a, b)] = counts.get((a, b), 0) + 1
-            if not counts:
-                break
-            pair = max(counts, key=lambda p: counts[p])
-            new_id = 256 + i
-            self.merges.append(pair)
-            self.vocab[new_id] = self.vocab[pair[0]] + self.vocab[pair[1]]
-            ids = self._merge(ids, pair, new_id)
-            if (i + 1) % 32 == 0:
-                print(
-                    f"  BPE merge {i + 1}/{num_merges}: {self.vocab[new_id]!r} (freq={counts[pair]})"
-                )
-
-    @staticmethod
-    def _merge(ids: list[int], pair: tuple[int, int], new_id: int) -> list[int]:
-        out = []
-        i = 0
-        while i < len(ids):
-            if i < len(ids) - 1 and ids[i] == pair[0] and ids[i + 1] == pair[1]:
-                out.append(new_id)
-                i += 2
-            else:
-                out.append(ids[i])
-                i += 1
-        return out
-
-    def encode(self, text: str) -> list[int]:
-        ids = list(text.encode("utf-8"))
-        for pair_idx, pair in enumerate(self.merges):
-            ids = self._merge(ids, pair, 256 + pair_idx)
-        return ids
-
-    def decode(self, ids: list[int]) -> str:
-        return b"".join(self.vocab[i] for i in ids).decode("utf-8", errors="replace")
-
-    def save(self, path: str) -> None:
-        with open(path, "w") as f:
-            json.dump({"vocab_size": self.vocab_size, "merges": self.merges}, f)
-
-    @classmethod
-    def load(cls, path: str) -> BPETokenizer:
-        with open(path) as f:
-            obj = json.load(f)
-        tokenizer = cls(vocab_size=obj["vocab_size"])
-        tokenizer.merges = [tuple(p) for p in obj["merges"]]
-        tokenizer.vocab = {i: bytes([i]) for i in range(256)}
-        for i, (a, b) in enumerate(tokenizer.merges):
-            tokenizer.vocab[256 + i] = tokenizer.vocab[a] + tokenizer.vocab[b]
-        return tokenizer
 
 
 class DataLoader:
