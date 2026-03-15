@@ -126,14 +126,11 @@ class GatedDeltaNetBlock(nn.Module):
         diag_mask = torch.triu(torch.ones(C, C, device=x.device, dtype=torch.bool), diagonal=0)
         A = -(k_beta @ k.transpose(-1, -2) * L_mask).masked_fill(diag_mask, 0)
 
-        # (I + A)^{-1} via geometric series with repeated squaring: O(log C) matmuls
-        P = -A
-        S = torch.eye(C, device=x.device) + P
-        Pk = P
-        for _ in range(int(math.ceil(math.log2(C))) - 1):
-            Pk = Pk @ Pk
-            S = S + Pk @ S
-        A = S
+        # (I + A)^{-1} via forward substitution
+        A = A.clone()
+        for i in range(1, C):
+            A[..., i, :i] = A[..., i, :i].clone() + (A[..., i, :i].clone().unsqueeze(-1) * A[..., :i, :i].clone()).sum(-2)
+        A = A + torch.eye(C, device=x.device)
 
         # Corrected values and keys
         v = A @ v
@@ -239,16 +236,6 @@ class GatedDeltaNet(nn.Module):
         self.norm = RMSNorm(cfg.d_model)
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
         self.embedding.weight = self.lm_head.weight
-
-        self.apply(self._init_weights)
-
-    def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
-            nn.init.normal_(module.weight, std=0.02)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            nn.init.normal_(module.weight, std=0.02)
 
     def forward(self, input_ids, targets=None):
         x = self.embedding(input_ids)
