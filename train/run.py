@@ -1,9 +1,9 @@
 """Unified training script.
 
 Usage:
-    uv run train/run.py train/models/hebbian_minimal_18M.yaml train/configs/config_18M.yaml
-    uv run train/run.py train/models/hebbian_mamba_100M.yaml train/configs/config_100M.yaml
-    uv run train/run.py train/models/hebbian_100M.yaml train/configs/config_100M.yaml --resume checkpoints/ckpt_hebbian_100M_step2000.pt
+    uv run train/run.py hebbian_minimal_18M 18M
+    uv run train/run.py hebbian_mamba_100M 100M
+    uv run train/run.py hebbian_100M 100M --resume checkpoints/ckpt_hebbian_100M_step2000.pt
 """
 
 import argparse
@@ -11,153 +11,137 @@ import json
 import math
 import os
 import time
-from dataclasses import dataclass
+from copy import deepcopy
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import torch
-import yaml
 
 from data import load_dataset, DataLoader
-
 from models import build_model
+import train.configs as C
 
+MODELS = {
+    "hebbian_18M": C.HEBBIAN_18M,
+    "hebbian_100M": C.HEBBIAN_100M,
+    "hebbian_mamba_18M": C.HEBBIAN_MAMBA_18M,
+    "hebbian_mamba_100M": C.HEBBIAN_MAMBA_100M,
+    "mamba_100M": C.MAMBA_100M,
+}
 
-@dataclass
-class TrainConfig:
-    dataset: str
-    steps: int
-    batch_size: int
-    seq_len: int
-    lr: float
-    warmup: int
-    grad_accum: int
-    eval_interval: int
-    ckpt_interval: int
-    compile: bool = False
+TRAINS = {
+    "train_18M": C.TRAIN_18M,
+    "train_100M": C.TRAIN_100M,
+}
 
 
 def main():
-    args, model_cfg_dict, tc, tag = parse_args()
-
+    # setup
+    args, model_config, train_config, tag = parse_args()
     device = setup_device()
+    ds, train_loader, val_loader = setup_data(train_config)
+    model_config.vocab_size = ds.vocab_size
+    model, checkpoint_config, model_class, optimizer = setup_model(model_config, train_config, device)
 
-    train_loader, val_loader, ds = setup_data(tc)
+    # logging
+    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("histories", exist_ok=True)
+    log_path = f"histories/{tag}.jsonl"
+    log_file = open(log_path, "a" if args.resume else "w")
 
-    model, model_cfg, model_class, optimizer = setup_model(
-        model_cfg_dict, ds.vocab_size, tc, device
-    )
-
+    # print stats
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"{model_class} | {n_params / 1e6:.1f}M params | {device}")
     start_step = (
         resume_from(model, optimizer, args.resume, device) if args.resume else 0
     )
-
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"{model_class} | {n_params / 1e6:.1f}M params | {device}")
     print(
-        f"Steps {start_step} -> {tc.steps} | B={tc.batch_size}x{tc.grad_accum} T={tc.seq_len} lr={tc.lr}"
+        f"Steps {start_step} -> {train_config.steps} | B={train_config.batch_size}x{train_config.grad_accum} T={train_config.seq_len} lr={train_config.lr}"
     )
 
-    os.makedirs("checkpoints", exist_ok=True)
-    os.makedirs("histories", exist_ok=True)
-    log_path = f"histories/history_{tag}.jsonl"
-    log_file = open(log_path, "a" if args.resume else "w")
-    min_lr = tc.lr * 0.1
-    tokens_per_step = tc.batch_size * tc.seq_len * tc.grad_accum
-
+    # training loop
     step = start_step
-    try:
-        for step in range(start_step, tc.steps):
-            t0 = time.time()
+    min_lr = train_config.lr * 0.1
+    tokens_per_step = train_config.batch_size * train_config.seq_len * train_config.grad_accum
+    for step in range(start_step + 1, train_config.steps + 1):
+        t0 = time.time()
 
-            # lr schedule
-            cur_lr = cosine_lr(step, tc.warmup, tc.steps, tc.lr, min_lr)
-            for pg in optimizer.param_groups:
-                pg["lr"] = cur_lr
+        # lr schedule
+        cur_lr = cosine_lr(step, train_config.warmup, train_config.steps, train_config.lr, min_lr)
+        for pg in optimizer.param_groups:
+            pg["lr"] = cur_lr
 
-            # forward + backward with grad accumulation
-            optimizer.zero_grad(set_to_none=True)
-            loss_accum = 0.0
-            for _ in range(tc.grad_accum):
-                x, y = train_loader.batch()
-                x, y = x.to(device), y.to(device)
-                with torch.autocast(
-                    device_type=device.split(":")[0], dtype=torch.bfloat16
-                ):
-                    _, loss = model(x, y)
-                loss = loss / tc.grad_accum
-                loss.backward()
-                loss_accum += loss.item()
+        # forward + backward with grad accumulation
+        optimizer.zero_grad(set_to_none=True)
+        loss_accum = 0.0
+        for _ in range(train_config.grad_accum):
+            x, y = train_loader.batch()
+            x, y = x.to(device), y.to(device)
+            with torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16):
+                _, loss = model(x, y)
+            loss = loss / train_config.grad_accum
+            loss.backward()
+            loss_accum += loss.item()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
 
-            # logging
-            dt = time.time() - t0
-            tokens_seen = (step + 1) * tokens_per_step
-            entry = {"step": step, "train_loss": loss_accum, "tokens": tokens_seen}
-            print(
-                f"step {step:5d} | loss {loss_accum:.4f} | ppl {math.exp(loss_accum):8.2f} | lr {cur_lr:.2e} | {dt * 1000:.0f}ms",
-                flush=True,
+        # log
+        entry = {
+            "step": step,
+            "train_loss": loss_accum,
+            "tokens": step * tokens_per_step,
+            "lr": cur_lr,
+            "dt_ms": (time.time() - t0) * 1000,
+        }
+        if step % train_config.eval_interval == 0:
+            entry["val_loss"] = evaluate(model, val_loader, device)
+        log(log_file, entry)
+
+        # Checkpoint
+        if step % train_config.ckpt_interval == 0:
+            save_checkpoint(
+                model,
+                optimizer,
+                checkpoint_config,
+                model_class,
+                step,
+                f"checkpoints/ckpt_{tag}_step{step}.pt",
             )
 
-            # eval
-            if step > 0 and step % tc.eval_interval == 0:
-                vl = evaluate(model, val_loader, device)
-                entry["val_loss"] = vl
-                print(f"  val loss {vl:.4f} | val ppl {math.exp(vl):.2f}", flush=True)
-
-            # checkpoint
-            if step > 0 and step % tc.ckpt_interval == 0:
-                save_checkpoint(
-                    model,
-                    optimizer,
-                    model_cfg,
-                    model_class,
-                    step,
-                    f"checkpoints/ckpt_{tag}_step{step}.pt",
-                )
-
-            log_file.write(json.dumps(entry) + "\n")
-            log_file.flush()
-    except KeyboardInterrupt:
-        print(f"\nStopped at step {step}.")
-
-    # final save
-    raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
-    vl = evaluate(model, val_loader, device)
-    log_file.write(
-        json.dumps(
-            {
-                "step": step,
-                "train_loss": loss_accum,
-                "val_loss": vl,
-                "tokens": (step + 1) * tokens_per_step,
-            }
-        )
-        + "\n"
-    )
+    # final log
+    entry = {
+        "step": step,
+        "train_loss": loss_accum,
+        "tokens": step * tokens_per_step,
+        "val_loss": evaluate(model, val_loader, device),
+    }
+    log(log_file, entry)
     log_file.close()
-    print(f"\nFinal val loss: {vl:.4f} | ppl {math.exp(vl):.2f}")
 
-    prompt = "def fizzbuzz(n):\n" if tc.dataset in ("code_parrot", "the_stack") else ""
+    # final checkpoint
+    save_checkpoint(
+        model, optimizer, checkpoint_config, model_class, step, f"checkpoints/model_{tag}.pt"
+    )
+
+    # sample
+    raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
+    prompt = "def fizzbuzz(n):\n"
     print(
         f"Sample:\n{sample(raw_model, ds.encode, ds.decode, device, prompt=prompt, n=300)}"
     )
 
-    save_checkpoint(
-        model,
-        optimizer,
-        model_cfg,
-        model_class,
-        step + 1,
-        f"checkpoints/model_{tag}.pt",
-    )
-    history = [json.loads(line) for line in open(log_path)]
-    plot_losses(history, tag)
-    print(f"Saved checkpoints/model_{tag}.pt + {log_path}")
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("model", choices=MODELS.keys())
+    p.add_argument("train", choices=TRAINS.keys())
+    p.add_argument("--resume", type=str, default=None)
+    p.add_argument("--tag", type=str, default=None)
+
+    args = p.parse_args()
+    model_config = deepcopy(MODELS[args.model])
+    train_config = deepcopy(TRAINS[args.train])
+    tag = args.tag or args.model
+    return args, model_config, train_config, tag
 
 
 def setup_device():
@@ -175,44 +159,21 @@ def setup_device():
     return device
 
 
-def setup_data(tc):
-    ds = load_dataset(tc.dataset)
-    train_loader = DataLoader(ds.train, tc.batch_size, tc.seq_len)
-    val_loader = DataLoader(ds.val, tc.batch_size, tc.seq_len)
-    return train_loader, val_loader, ds
+def setup_data(train_config):
+    ds = load_dataset(train_config.dataset)
+    train_loader = DataLoader(ds.train, train_config.batch_size, train_config.seq_len)
+    val_loader = DataLoader(ds.val, train_config.batch_size, train_config.seq_len)
+    return ds, train_loader, val_loader
 
 
-def setup_model(model_cfg_dict, vocab_size, tc, device):
-    model_cfg_dict["vocab_size"] = vocab_size
-    model, model_cfg, model_class = build_model(model_cfg_dict)
+def setup_model(model_config, train_config, device):
+    model, checkpoint_config, model_class = build_model(model_config)
     model = model.to(device)
-    if tc.compile:
+    if train_config.compile:
         print("Compiling model...")
         model = torch.compile(model)
-    optimizer = configure_optimizers(model, tc.lr)
-    return model, model_cfg, model_class, optimizer
-
-
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("model_config", type=str, help="Path to model YAML config")
-    p.add_argument("train_config", type=str, help="Path to training YAML config")
-    p.add_argument("--resume", type=str, default=None)
-    p.add_argument("--tag", type=str, default=None)
-    args = p.parse_args()
-
-    with open(args.model_config) as f:
-        model_cfg = yaml.safe_load(f)
-    for k in ("lr", "memory_alpha"):
-        if k in model_cfg and isinstance(model_cfg[k], str):
-            model_cfg[k] = float(model_cfg[k])
-
-    with open(args.train_config) as f:
-        train_dict = yaml.safe_load(f)
-
-    tc = TrainConfig(**{k: v for k, v in train_dict.items() if hasattr(TrainConfig, k)})
-    tag = args.tag or os.path.splitext(os.path.basename(args.model_config))[0]
-    return args, model_cfg, tc, tag
+    optimizer = configure_optimizers(model, train_config.lr)
+    return model, checkpoint_config, model_class, optimizer
 
 
 def configure_optimizers(model, lr, weight_decay=0.1):
@@ -244,26 +205,23 @@ def resume_from(model, optimizer, path, device):
     return start_step
 
 
-def save_checkpoint(model, optimizer, model_cfg, model_class, step, path):
-    raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
-    torch.save(
-        {
-            "model": raw_model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "config": model_cfg,
-            "model_class": model_class,
-            "step": step,
-        },
-        path,
-    )
-    print(f"  -> {path}", flush=True)
-
-
 def cosine_lr(step, warmup, total, max_lr, min_lr):
-    if step < warmup:
-        return max_lr * (step + 1) / warmup
+    if step <= warmup:
+        return max_lr * step / warmup
     t = (step - warmup) / max(total - warmup, 1)
     return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * t))
+
+
+def log(log_file, entry):
+    print(
+        " | ".join(
+            f"{k} {v:.4f}" if isinstance(v, float) else f"{k} {v}"
+            for k, v in entry.items()
+        ),
+        flush=True,
+    )
+    log_file.write(json.dumps(entry) + "\n")
+    log_file.flush()
 
 
 @torch.no_grad()
@@ -277,6 +235,21 @@ def evaluate(model, loader, device, steps=10):
         total += loss.item()
     model.train()
     return total / steps
+
+
+def save_checkpoint(model, optimizer, checkpoint_config, model_class, step, path):
+    raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
+    torch.save(
+        {
+            "model": raw_model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "config": checkpoint_config,
+            "model_class": model_class,
+            "step": step,
+        },
+        path,
+    )
+    print(f"  -> {path}", flush=True)
 
 
 @torch.no_grad()
@@ -311,32 +284,6 @@ def detach_states(states):
         else s
         for s in states
     ]
-
-
-def plot_losses(history, tag):
-    use_tokens = "tokens" in history[0]
-    xs = (
-        [h["tokens"] / 1e6 for h in history]
-        if use_tokens
-        else [h["step"] for h in history]
-    )
-    xlabel = "Training tokens (M)" if use_tokens else "Step"
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(xs, [h["train_loss"] for h in history], label="train", alpha=0.7)
-    val = [
-        (h["tokens"] / 1e6 if use_tokens else h["step"], h["val_loss"])
-        for h in history
-        if "val_loss" in h
-    ]
-    if val:
-        ax.plot(*zip(*val), "o-", label="val", markersize=4)
-    ax.set(xlabel=xlabel, ylabel="loss (nats)", title=f"Training — {tag}")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(f"checkpoints/loss_{tag}.png", dpi=150)
-    plt.close(fig)
 
 
 if __name__ == "__main__":

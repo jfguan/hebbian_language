@@ -126,7 +126,7 @@ def load_dataset(name: str = "pg19") -> Dataset:
     train_path = os.path.join(cfg.cache_dir, "train_tokens.npy")
     val_path = os.path.join(cfg.cache_dir, "val_tokens.npy")
 
-    # Try cache
+    # Try cache first
     if (
         os.path.exists(tokenizer_path)
         and os.path.exists(train_path)
