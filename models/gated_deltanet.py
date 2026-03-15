@@ -203,28 +203,29 @@ class GatedDeltaNetLayer(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         d_inner = cfg.expand * cfg.d_model
-        self.norm = RMSNorm(cfg.d_model)
+        self.delta_norm = RMSNorm(cfg.d_model)
+        self.delta = GatedDeltaNetBlock(cfg.d_model, num_heads=cfg.num_heads, chunk_size=cfg.chunk_size)
+        self.mlp_norm = RMSNorm(cfg.d_model)
         self.mlp = GatedMLP(cfg.d_model, expand=cfg.expand)
         self.conv = CausalConv(d_inner, d_conv=cfg.d_conv)
-        self.delta = GatedDeltaNetBlock(cfg.d_model, num_heads=cfg.num_heads, chunk_size=cfg.chunk_size)
 
     def forward(self, x):
-        normed = self.norm(x)
-        val = self.conv(self.mlp.project_up(normed))
-        out = self.mlp(normed, val)
-        out = self.delta(out)
-        return x + out
+        x = x + self.delta(self.delta_norm(x))
+        normed = self.mlp_norm(x)
+        x = x + self.mlp(normed, self.conv(self.mlp.project_up(normed)))
+        return x
 
     def step(self, x, state=None):
         conv_st = state["conv"] if state else None
         delta_st = state["delta"] if state else None
 
-        normed = self.norm(x)
+        out, delta_st = self.delta.step(self.delta_norm(x), delta_st)
+        x = x + out
+        normed = self.mlp_norm(x)
         val, conv_st = self.conv.step(self.mlp.project_up(normed), conv_st)
-        out = self.mlp(normed, val)
-        out, delta_st = self.delta.step(out, delta_st)
+        x = x + self.mlp(normed, val)
 
-        return x + out, {"conv": conv_st, "delta": delta_st}
+        return x, {"conv": conv_st, "delta": delta_st}
 
 
 class GatedDeltaNet(nn.Module):
