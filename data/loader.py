@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any
+from functools import partial
 
 from datasets import load_dataset as hf_load, interleave_datasets
 import numpy as np
@@ -19,28 +19,20 @@ class DatasetConfig:
     train_chars: int
     val_chars: int
     bpe_train_chars: int
-    stream: Callable[[int, str, int], str]  # (char_target, split, seed) -> text
+    stream_train: Callable[[int], str]  # (char_target) -> text
+    stream_val: Callable[[int], str]
 
 
-def _stream_pg19(char_target: int, split: str, seed: int) -> str:
-    # PG-19 uses "validation" not "val" on HuggingFace
-    hf_split = "validation" if split == "val" else split
+def _stream_pg19(char_target: int, hf_split: str) -> str:
     ds = hf_load("emozilla/pg19", split=hf_split, streaming=True)
-
     texts = (row["text"] for row in ds)
+
     return _collect_chunks(texts, char_target)
 
 
-def _stream_code(char_target: int, split: str, seed: int) -> str:
-    ds = hf_load("codeparrot/codeparrot-clean", split="train", streaming=True)
-    ds = ds.shuffle(seed=seed, buffer_size=10_000)
-
-    texts = _filter_by_length(ds, "content", min_chars=4096)
-    return _collect_chunks(texts, char_target)
-
-
-def _stream_stack(char_target: int, split: str, seed: int) -> str:
+def _stream_stack(char_target: int, seed: int) -> str:
     streams = []
+
     languages = ["python", "javascript", "typescript", "java", "c", "cpp", "rust", "go"]
     for lang in languages:
         ds = hf_load(
@@ -52,30 +44,26 @@ def _stream_stack(char_target: int, split: str, seed: int) -> str:
         streams.append(ds.select_columns(["content"]))
 
     combined = interleave_datasets(streams, seed=seed)
-    texts = _filter_by_length(combined, "content", min_chars=32_000)
+
+    # Filter for only files above 32_000 chararacter length
+    texts = (row["content"] for row in combined if len(row["content"]) >= 32_000)
     return _collect_chunks(texts, char_target)
 
 
 def _collect_chunks(texts: Iterator[str], char_target: int) -> str:
     """Accumulate text chunks from an iterator until char_target is reached."""
-    chunks, total, n = [], 0, 0
-    for text in texts:
+    chunks, char_total = [], 0
+    while char_total < char_target:
+        text = next(texts)
+
         chunks.append(text)
-        total += len(text)
-        n += 1
-        if n % 100 == 0:
-            print(f"  {n} items, {total:,} chars...", flush=True)
-        if total >= char_target:
-            break
-    print(f"  {n} items, {total:,} chars (done)")
+        char_total += len(text)
+
+        if len(chunks) % 100 == 0:
+            print(f"  {len(chunks)} items, {char_total:,} chars...", flush=True)
+
+    print(f"  {len(chunks)} items, {char_total:,} chars (done)")
     return "\n\n".join(chunks)
-
-
-def _filter_by_length(dataset: Any, field: str, min_chars: int) -> Iterator[str]:
-    """Yield text values from dataset rows that meet the minimum length."""
-    for row in dataset:
-        if len(row[field]) >= min_chars:
-            yield row[field]
 
 
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,15 +75,8 @@ DATASETS: dict[str, DatasetConfig] = {
         train_chars=80_000_000,
         val_chars=4_000_000,
         bpe_train_chars=5_000_000,
-        stream=_stream_pg19,
-    ),
-    "code_parrot": DatasetConfig(
-        cache_dir=os.path.join(DATA_DIR, "codeparrot"),
-        vocab_size=1024,
-        train_chars=64_000_000,
-        val_chars=4_000_000,
-        bpe_train_chars=5_000_000,
-        stream=_stream_code,
+        stream_train=partial(_stream_pg19, hf_split="train"),
+        stream_val=partial(_stream_pg19, hf_split="validation"),
     ),
     "the_stack": DatasetConfig(
         cache_dir=os.path.join(DATA_DIR, "the_stack"),
@@ -103,7 +84,8 @@ DATASETS: dict[str, DatasetConfig] = {
         train_chars=64_000_000,
         val_chars=4_000_000,
         bpe_train_chars=5_000_000,
-        stream=_stream_stack,
+        stream_train=partial(_stream_stack, seed=42),
+        stream_val=partial(_stream_stack, seed=1337),
     ),
 }
 
@@ -174,8 +156,8 @@ def _load_cached_dataset(cfg: DatasetConfig, name: str) -> Dataset | None:
 
 def _download_dataset(cfg: DatasetConfig) -> Dataset:
     # Stream text from HuggingFace
-    train_text = cfg.stream(cfg.train_chars, "train", 42)
-    val_text = cfg.stream(cfg.val_chars, "val", 1337)
+    train_text = cfg.stream_train(cfg.train_chars)
+    val_text = cfg.stream_val(cfg.val_chars)
 
     # Train BPE tokenizer on subset of training text
     tokenizer_path = os.path.join(cfg.cache_dir, "tokenizer.json")

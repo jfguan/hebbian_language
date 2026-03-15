@@ -1,0 +1,7 @@
+model: hebbian_minimal
+d_model: 1024
+n_layers: 12
+d_conv: 4
+expand: 2
+memory_alpha: 0.03
+chunk_size: 64

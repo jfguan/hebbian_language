@@ -1,9 +1,9 @@
 """Generate samples from a trained model checkpoint.
 
 Usage:
-    uv run sample.py checkpoints/model_code_memory.pt
-    uv run sample.py checkpoints/model_code_memory.pt --prompt "def binary_search("
-    uv run sample.py checkpoints/model_code_memory.pt --n 500 --temp 0.9
+    uv run train/sample.py checkpoints/model_code_memory.pt
+    uv run train/sample.py checkpoints/model_code_memory.pt --prompt "def binary_search("
+    uv run train/sample.py checkpoints/model_code_memory.pt --n 500 --temp 0.9
 """
 
 import argparse
