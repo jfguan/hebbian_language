@@ -131,10 +131,7 @@ class Dataset:
 
 
 def load_dataset(name: str = "pg19") -> Dataset:
-    """Load (or download + tokenize + cache) a dataset.
-
-    name: One of "pg19", "code_parrot", "the_stack".
-    """
+    """Load (or download + tokenize + cache) a dataset."""
     if name not in DATASETS:
         raise ValueError(f"Unknown dataset: {name!r}. Choose from {list(DATASETS)}")
 
@@ -165,7 +162,9 @@ def _load_cached_dataset(cfg: DatasetConfig, name: str) -> Dataset | None:
         return None
 
     if tokenizer.get_vocab_size() != cfg.vocab_size:
-        print(f"vocab_size mismatch ({tokenizer.get_vocab_size()} vs {cfg.vocab_size}), retraining")
+        print(
+            f"vocab_size mismatch ({tokenizer.get_vocab_size()} vs {cfg.vocab_size}), retraining"
+        )
         return None
 
     train_data = np.load(train_path)
@@ -175,18 +174,21 @@ def _load_cached_dataset(cfg: DatasetConfig, name: str) -> Dataset | None:
 
 def _download_dataset(cfg: DatasetConfig) -> Dataset:
     # Stream text from HuggingFace
-    train_text = cfg.stream(cfg.train_chars, "train", seed=42)
-    val_text = cfg.stream(cfg.val_chars, "val", seed=1337)
+    train_text = cfg.stream(cfg.train_chars, "train", 42)
+    val_text = cfg.stream(cfg.val_chars, "val", 1337)
 
     # Train BPE tokenizer on subset of training text
     tokenizer_path = os.path.join(cfg.cache_dir, "tokenizer.json")
     bpe_sample = train_text[: cfg.bpe_train_chars]
-    print(f"Training BPE tokenizer (vocab_size={cfg.vocab_size}) on {len(bpe_sample):,} chars...")
+    print(
+        f"Training BPE tokenizer (vocab_size={cfg.vocab_size}) on {len(bpe_sample):,} chars..."
+    )
 
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     trainer = trainers.BpeTrainer(vocab_size=cfg.vocab_size, special_tokens=[])
-    tokenizer.train_from_iterator([bpe_sample], trainer=trainer)
+    # Split into lines so BPE sees natural boundaries
+    tokenizer.train_from_iterator(bpe_sample.splitlines(), trainer=trainer)
     tokenizer.save(tokenizer_path)
 
     print(f"Saved tokenizer to {tokenizer_path}")

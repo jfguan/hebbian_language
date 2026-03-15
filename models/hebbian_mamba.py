@@ -39,7 +39,6 @@ class HebbianMambaLayer(nn.Module):
             d_model=cfg.d_model,
             chunk_size=cfg.chunk_size,
             memory_alpha=cfg.memory_alpha,
-            learned_alpha=False,
         )
 
     def forward(self, x):

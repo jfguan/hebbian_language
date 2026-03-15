@@ -60,8 +60,7 @@ class HebbianBlock(nn.Module):
     Chunkwise parallel O(TC·D + T·D²) for training, recurrent O(D²) for inference.
     """
 
-    def __init__(self, d_model: int, chunk_size: int = 64, memory_alpha: float = 0.03,
-                 learned_alpha: bool = True):
+    def __init__(self, d_model: int, chunk_size: int = 64, memory_alpha: float = 0.03):
         super().__init__()
         self.d_model = d_model
         self.chunk_size = chunk_size
@@ -69,11 +68,7 @@ class HebbianBlock(nn.Module):
         self.proj_write = nn.Linear(d_model, d_model, bias=False)
         self.proj_read = nn.Linear(d_model, d_model, bias=False)
         self.decay = nn.Parameter(torch.tensor(4.6))  # σ(4.6) ≈ 0.99
-
-        if learned_alpha:
-            self.log_alpha = nn.Parameter(torch.tensor(memory_alpha).log())
-        else:
-            self.register_buffer("log_alpha", torch.tensor(memory_alpha).log())
+        self.log_alpha = nn.Parameter(torch.tensor(memory_alpha).log())
 
     @property
     def alpha(self):
