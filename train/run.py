@@ -73,9 +73,9 @@ def main():
         val_str = f" | val {val_loss:.4f}" if val_loss is not None else ""
         print(f"step {step} | loss {train_loss:.4f}{val_str} | {tokens / 1e6:.1f}M tok | {step_ms:.0f}ms")
 
-        entry = {"step": step, "train_loss": train_loss, "tokens": tokens}
+        entry = {"step": step, "train_loss": round(train_loss, 4), "tokens": tokens, "step_ms": round(step_ms, 2)}
         if val_loss is not None:
-            entry["val_loss"] = val_loss
+            entry["val_loss"] = round(val_loss, 4)
         with open(log_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
 
