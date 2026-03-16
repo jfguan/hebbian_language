@@ -7,25 +7,13 @@ Based on: "Gated Delta Networks: Improving Mamba2 with Delta Rule" (ICLR 2025)
 Reference: NVlabs/GatedDeltaNet, fla naive_chunk_gated_delta_rule
 """
 
-from dataclasses import dataclass
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
 from models.hebbian_components import CausalConv, GatedMLP
-
-
-@dataclass
-class Config:
-    vocab_size: int = 384
-    d_model: int = 512
-    d_conv: int = 4
-    expand: int = 2
-    n_layers: int = 8
-    num_heads: int = 4
-    chunk_size: int = 64
+from train.configs import ModelConfig
 
 
 def l2norm(x, dim=-1, eps=1e-6):
@@ -212,7 +200,7 @@ class GatedDeltaNetBlock(nn.Module):
 
 
 class GatedDeltaNetLayer(nn.Module):
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: ModelConfig):
         super().__init__()
         self.delta_norm = RMSNorm(cfg.d_model)
         self.delta = GatedDeltaNetBlock(cfg.d_model, num_heads=cfg.num_heads, d_conv=cfg.d_conv, chunk_size=cfg.chunk_size)
@@ -232,7 +220,7 @@ class GatedDeltaNetLayer(nn.Module):
 
 
 class GatedDeltaNet(nn.Module):
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: ModelConfig):
         super().__init__()
         self.cfg = cfg
         self.embedding = nn.Embedding(cfg.vocab_size, cfg.d_model)

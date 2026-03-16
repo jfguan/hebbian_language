@@ -6,6 +6,7 @@ from data.loader import DatasetName
 
 class ModelType(str, Enum):
     HEBBIAN = "hebbian"
+    DELTA_HEBBIAN = "delta_hebbian"
     MAMBA = "mamba"
     GDN = "gdn"
 
@@ -19,10 +20,15 @@ class ModelConfig:
     d_conv: int
     expand: int
     d_state: int
-    # Hebbian memory (optional)
+    chunk_size: int
+
+    vocab_size: int = 0  # set from dataset at runtime
+
+    # Hebbian memory
     memory_alpha: float | None = None
     head_dim: int | None = None
-    # GDN (optional)
+
+    # GDN
     num_heads: int | None = None
 
 
@@ -49,9 +55,35 @@ HEBBIAN_18M = ModelConfig(
     d_conv=4,
     expand=2,
     d_state=16,
+    chunk_size=64,
     memory_alpha=0.03,
-    head_dim=128,
 )
+
+HEBBIAN_512_18M = ModelConfig(
+    name="hebbian_512_18M",
+    model=ModelType.HEBBIAN,
+    d_model=512,
+    n_layers=8,
+    d_conv=4,
+    expand=2,
+    d_state=16,
+    chunk_size=64,
+    memory_alpha=0.03,
+)
+
+HEBBIAN_BD256_18M = ModelConfig(
+    name="hebbian_bd256_18M",
+    model=ModelType.HEBBIAN,
+    d_model=512,
+    n_layers=8,
+    d_conv=4,
+    expand=2,
+    d_state=16,
+    chunk_size=64,
+    memory_alpha=0.03,
+    head_dim=256,
+)
+
 
 HEBBIAN_100M = ModelConfig(
     name="hebbian_100M",
@@ -61,8 +93,36 @@ HEBBIAN_100M = ModelConfig(
     d_conv=4,
     expand=2,
     d_state=16,
+    chunk_size=64,
     memory_alpha=0.03,
-    head_dim=128,
+)
+
+# -- Delta Hebbian --
+
+DELTA_HEBBIAN_18M = ModelConfig(
+    name="delta_hebbian_18M",
+    model=ModelType.DELTA_HEBBIAN,
+    d_model=512,
+    n_layers=8,
+    d_conv=4,
+    expand=2,
+    d_state=16,
+    chunk_size=64,
+    memory_alpha=0.03,
+    head_dim=256,
+)
+
+DELTA_HEBBIAN_100M = ModelConfig(
+    name="delta_hebbian_100M",
+    model=ModelType.DELTA_HEBBIAN,
+    d_model=1024,
+    n_layers=12,
+    d_conv=4,
+    expand=2,
+    d_state=16,
+    chunk_size=64,
+    memory_alpha=0.03,
+    head_dim=256,
 )
 
 # -- GDN baseline --
@@ -75,6 +135,7 @@ GDN_18M = ModelConfig(
     d_conv=4,
     expand=2,
     d_state=16,
+    chunk_size=64,
     num_heads=4,
 )
 
@@ -88,6 +149,7 @@ MAMBA_18M = ModelConfig(
     d_conv=4,
     expand=2,
     d_state=16,
+    chunk_size=64,
 )
 
 MAMBA_100M = ModelConfig(
@@ -98,6 +160,7 @@ MAMBA_100M = ModelConfig(
     d_conv=4,
     expand=2,
     d_state=16,
+    chunk_size=64,
 )
 
 

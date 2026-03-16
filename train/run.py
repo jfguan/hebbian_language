@@ -21,7 +21,11 @@ import train.configs as C
 
 MODELS = {
     "hebbian_18M": C.HEBBIAN_18M,
+    "hebbian_512_18M": C.HEBBIAN_512_18M,
+    "hebbian_bd256_18M": C.HEBBIAN_BD256_18M,
     "hebbian_100M": C.HEBBIAN_100M,
+    "delta_hebbian_18M": C.DELTA_HEBBIAN_18M,
+    "delta_hebbian_100M": C.DELTA_HEBBIAN_100M,
     "gdn_18M": C.GDN_18M,
     "mamba_18M": C.MAMBA_18M,
     "mamba_100M": C.MAMBA_100M,
@@ -40,7 +44,8 @@ def main():
     model_config, train_config, resume = parse_args()
     device = setup_device()
     dataset, train_loader, val_loader = setup_data(train_config)
-    model = build_model(model_config, dataset.vocab_size).to(device)
+    model_config.vocab_size = dataset.vocab_size
+    model = build_model(model_config).to(device)
     if device == "cuda":
         model = torch.compile(model)
     optimizer = configure_optimizers(

@@ -1,17 +1,14 @@
-"""Conv + Hebbian associative memory.
+"""Hybrid Hebbian + Delta Hebbian model.
 
-Depthwise conv for local feature extraction (kernel=d_conv tokens),
-Hebbian outer-product memory for long-range associative binding.
-
-Memory: W_t = γW_{t-1} + v_t⊗k_t, read_t = W_{t-1}·rk_t
-Training uses O(TC·D + T·D²) chunkwise parallel form; inference uses O(D²) recurrent form.
+3:1 ratio: plain Hebbian layers for statistical accumulation,
+delta Hebbian every 4th layer for precise recall.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.hebbian_components import CausalConv, GatedMLP, HebbianBlock
+from models.hebbian_components import CausalConv, GatedMLP, HebbianBlock, DeltaHebbianBlock
 from train.configs import ModelConfig
 
 
@@ -25,21 +22,28 @@ class RMSNorm(nn.Module):
         return x * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + self.eps).to(x.dtype) * self.weight
 
 
-class HebbianLayer(nn.Module):
-    """Conv local mixing + Hebbian associative memory + residual."""
+class HybridHebbianLayer(nn.Module):
+    """Conv local mixing + memory (plain or delta) + residual."""
 
-    def __init__(self, cfg: ModelConfig):
+    def __init__(self, cfg: ModelConfig, use_delta: bool = False):
         super().__init__()
         d_inner = cfg.expand * cfg.d_model
         self.norm = RMSNorm(cfg.d_model)
         self.mlp = GatedMLP(cfg.d_model, expand=cfg.expand)
         self.conv = CausalConv(d_inner, d_conv=cfg.d_conv)
-        self.memory = HebbianBlock(
-            d_model=cfg.d_model,
-            chunk_size=cfg.chunk_size,
-            memory_alpha=cfg.memory_alpha,
-            head_dim=cfg.head_dim,
-        )
+        if use_delta:
+            self.memory = DeltaHebbianBlock(
+                d_model=cfg.d_model,
+                head_dim=cfg.d_model,
+                chunk_size=cfg.chunk_size,
+                memory_alpha=cfg.memory_alpha,
+            )
+        else:
+            self.memory = HebbianBlock(
+                d_model=cfg.d_model,
+                chunk_size=cfg.chunk_size,
+                memory_alpha=cfg.memory_alpha,
+            )
 
     def forward(self, x):
         normed = self.norm(x)
@@ -60,12 +64,15 @@ class HebbianLayer(nn.Module):
         return x + out, {"conv": conv_st, "memory": mem_state}
 
 
-class HebbianConv(nn.Module):
+class DeltaHebbianConv(nn.Module):
     def __init__(self, cfg: ModelConfig):
         super().__init__()
         self.cfg = cfg
         self.embedding = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        self.layers = nn.ModuleList([HebbianLayer(cfg) for _ in range(cfg.n_layers)])
+        self.layers = nn.ModuleList([
+            HybridHebbianLayer(cfg, use_delta=(i % 4 == 3))
+            for i in range(cfg.n_layers)
+        ])
         self.norm = RMSNorm(cfg.d_model)
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
         self.embedding.weight = self.lm_head.weight

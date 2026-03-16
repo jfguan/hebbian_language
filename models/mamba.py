@@ -1,25 +1,15 @@
 """Pure Mamba (no Hebbian memory)."""
 
-from dataclasses import dataclass
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mambapy.mamba import MambaBlock, MambaConfig as MambaCfg, RMSNorm
 
-
-@dataclass
-class Config:
-    vocab_size: int = 384
-    d_model: int = 512
-    d_state: int = 16
-    d_conv: int = 4
-    expand: int = 2
-    n_layers: int = 8
+from train.configs import ModelConfig
 
 
 class MambaLayer(nn.Module):
-    def __init__(self, cfg: Config, mcfg: MambaCfg):
+    def __init__(self, cfg: ModelConfig, mcfg: MambaCfg):
         super().__init__()
         self.d_inner = mcfg.d_inner
         self.d_conv = mcfg.d_conv
@@ -40,7 +30,7 @@ class MambaLayer(nn.Module):
 
 
 class Mamba(nn.Module):
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: ModelConfig):
         super().__init__()
         self.cfg = cfg
         mcfg = MambaCfg(
