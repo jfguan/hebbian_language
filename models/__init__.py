@@ -5,7 +5,7 @@ def build_model(model_config: ModelConfig):
     if model_config.model == ModelType.HEBBIAN:
         from .hebbian import HebbianConv
         return HebbianConv(model_config)
-    elif model_config.model == ModelType.DELTA_HEBBIAN:
+elif model_config.model == ModelType.DELTA_HEBBIAN:
         from .delta_hebbian import DeltaHebbianConv
         return DeltaHebbianConv(model_config)
     elif model_config.model == ModelType.MAMBA:

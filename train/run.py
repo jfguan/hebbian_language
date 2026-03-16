@@ -2,6 +2,7 @@
 
 Usage:
     uv run train/run.py hebbian_18M train_stack_18M
+    uv run train/run.py delta_hebbian_18M train_stack_18M
     uv run train/run.py gdn_18M train_stack_18M
     uv run train/run.py mamba_18M train_stack_18M
 """
@@ -21,9 +22,8 @@ import train.configs as C
 
 MODELS = {
     "hebbian_18M": C.HEBBIAN_18M,
-    "hebbian_512_18M": C.HEBBIAN_512_18M,
-    "hebbian_bd256_18M": C.HEBBIAN_BD256_18M,
     "hebbian_100M": C.HEBBIAN_100M,
+
     "delta_hebbian_18M": C.DELTA_HEBBIAN_18M,
     "delta_hebbian_100M": C.DELTA_HEBBIAN_100M,
     "gdn_18M": C.GDN_18M,
@@ -32,6 +32,7 @@ MODELS = {
 }
 
 TRAINS = {
+    "train_pg19_18M": C.TRAIN_PG19_18M,
     "train_stack_18M": C.TRAIN_STACK_18M,
     "train_stack_100M": C.TRAIN_STACK_100M,
 }
@@ -158,6 +159,9 @@ def parse_args():
     args = parser.parse_args()
     model_config = replace(MODELS[args.model])
     train_config = replace(TRAINS[args.train])
+    # run name: <model>_<dataset>_<size>, e.g. "hebbian_pg19_18M"
+    dataset = train_config.dataset.value  # "pg19" or "the_stack"
+    model_config.name = f"{args.model}_{dataset}"
     return model_config, train_config, args.resume
 
 

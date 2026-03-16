@@ -6,7 +6,7 @@ from data.loader import DatasetName
 
 class ModelType(str, Enum):
     HEBBIAN = "hebbian"
-    DELTA_HEBBIAN = "delta_hebbian"
+DELTA_HEBBIAN = "delta_hebbian"
     MAMBA = "mamba"
     GDN = "gdn"
 
@@ -28,6 +28,11 @@ class ModelConfig:
     memory_alpha: float | None = None
     head_dim: int | None = None
 
+    # Delta Hebbian
+    delta_layers: str | None = None      # comma-separated layer indices, e.g. "6,7"
+    no_memory_layers: str | None = None  # layers with conv+MLP only, no memory
+    neg_eigenvalues: bool = False         # beta [0,2] on delta layers
+
     # GDN
     num_heads: int | None = None
 
@@ -45,10 +50,10 @@ class TrainConfig:
     ckpt_interval: int
 
 
-# -- Hebbian --
+# -- Model configs (name is overridden at runtime to <model>_<dataset>_<size>) --
 
 HEBBIAN_18M = ModelConfig(
-    name="hebbian_18M",
+    name="hebbian",
     model=ModelType.HEBBIAN,
     d_model=512,
     n_layers=8,
@@ -56,37 +61,12 @@ HEBBIAN_18M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.03,
-)
-
-HEBBIAN_512_18M = ModelConfig(
-    name="hebbian_512_18M",
-    model=ModelType.HEBBIAN,
-    d_model=512,
-    n_layers=8,
-    d_conv=4,
-    expand=2,
-    d_state=16,
-    chunk_size=64,
-    memory_alpha=0.03,
-)
-
-HEBBIAN_BD256_18M = ModelConfig(
-    name="hebbian_bd256_18M",
-    model=ModelType.HEBBIAN,
-    d_model=512,
-    n_layers=8,
-    d_conv=4,
-    expand=2,
-    d_state=16,
-    chunk_size=64,
-    memory_alpha=0.03,
-    head_dim=256,
+    memory_alpha=0.2,
 )
 
 
 HEBBIAN_100M = ModelConfig(
-    name="hebbian_100M",
+    name="hebbian",
     model=ModelType.HEBBIAN,
     d_model=1024,
     n_layers=12,
@@ -94,13 +74,11 @@ HEBBIAN_100M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.03,
+    memory_alpha=0.2,
 )
 
-# -- Delta Hebbian --
-
 DELTA_HEBBIAN_18M = ModelConfig(
-    name="delta_hebbian_18M",
+    name="delta_hebbian",
     model=ModelType.DELTA_HEBBIAN,
     d_model=512,
     n_layers=8,
@@ -108,12 +86,13 @@ DELTA_HEBBIAN_18M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.03,
-    head_dim=256,
+    memory_alpha=0.2,
+    head_dim=128,
+    delta_layers="6,7",
 )
 
 DELTA_HEBBIAN_100M = ModelConfig(
-    name="delta_hebbian_100M",
+    name="delta_hebbian",
     model=ModelType.DELTA_HEBBIAN,
     d_model=1024,
     n_layers=12,
@@ -121,14 +100,13 @@ DELTA_HEBBIAN_100M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.03,
-    head_dim=256,
+    memory_alpha=0.2,
+    head_dim=128,
+    delta_layers="10,11",
 )
 
-# -- GDN baseline --
-
 GDN_18M = ModelConfig(
-    name="gdn_18M",
+    name="gdn",
     model=ModelType.GDN,
     d_model=512,
     n_layers=6,
@@ -139,10 +117,8 @@ GDN_18M = ModelConfig(
     num_heads=4,
 )
 
-# -- Mamba baseline --
-
 MAMBA_18M = ModelConfig(
-    name="mamba_18M",
+    name="mamba",
     model=ModelType.MAMBA,
     d_model=512,
     n_layers=10,
@@ -153,7 +129,7 @@ MAMBA_18M = ModelConfig(
 )
 
 MAMBA_100M = ModelConfig(
-    name="mamba_100M",
+    name="mamba",
     model=ModelType.MAMBA,
     d_model=1024,
     n_layers=16,
@@ -165,6 +141,18 @@ MAMBA_100M = ModelConfig(
 
 
 # -- Training hyperparameters --
+
+TRAIN_PG19_18M = TrainConfig(
+    dataset=DatasetName.PG19,
+    steps=1221,
+    batch_size=4,
+    seq_len=2048,
+    lr=6e-4,
+    warmup=60,
+    grad_accum=1,
+    eval_interval=100,
+    ckpt_interval=1221,
+)
 
 TRAIN_STACK_18M = TrainConfig(
     dataset=DatasetName.THE_STACK,
