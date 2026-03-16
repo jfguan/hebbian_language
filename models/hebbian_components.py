@@ -152,12 +152,19 @@ class HebbianBlock(nn.Module):
 
 
 class DeltaHebbianBlock(nn.Module):
-    """Block-diagonal associative memory with delta rule and input-dependent decay.
+    """Block-diagonal delta rule memory with input-dependent decay.
 
-    n_heads independent head_dim×head_dim memory matrices.
-    Write key is previous timestep, read key is current.
-    Delta rule: W_t = e^{g_t} · W_{t-1} + β_t(v_t - W_{t-1}·wk_t)·wk_t^T
-    where g_t = -A · softplus(proj_alpha(x_t) + dt_bias) is input-dependent.
+    Maintains n_heads independent head_dim × head_dim memory matrices.
+    Each token decides how much to forget (decay) and how strongly to write (beta).
+    The delta rule only writes what the memory doesn't already know.
+
+    Recurrence (per head):
+        decay_t = exp(-A · softplus(proj_alpha(x_t) + dt_bias))
+        W_t = decay_t · W_{t-1} + β_t · (v_t - W_{t-1} · wk_t) · wk_t^T
+        read_t = W_t · rk_t
+
+    where rk = current key (read), wk = previous key (write), v = proj_write(x).
+    Training uses chunkwise parallel form; inference uses sequential recurrence.
     """
 
     def __init__(self, d_model: int, head_dim: int = 128, chunk_size: int = 64):
@@ -168,6 +175,7 @@ class DeltaHebbianBlock(nn.Module):
         self.n_heads = d_model // head_dim
         self.chunk_size = chunk_size
 
+        # value and output projections
         self.proj_write = nn.Linear(d_model, d_model, bias=False)
         self.proj_read = nn.Linear(d_model, d_model, bias=False)
 
@@ -176,10 +184,10 @@ class DeltaHebbianBlock(nn.Module):
         self.proj_alpha = nn.Linear(d_model, self.n_heads, bias=False)
         self.dt_bias = nn.Parameter(torch.ones(self.n_heads))
 
-        # data-dependent write gate
+        # input-dependent write gate
         self.proj_beta = nn.Linear(d_model, self.n_heads, bias=False)
 
-        # static masks
+        # static masks (registered as buffers so they move with .to(device))
         C = chunk_size
         self.register_buffer("causal_mask", torch.triu(torch.ones(C, C, dtype=torch.bool), diagonal=0), persistent=False)
         self.register_buffer("eye_C", torch.eye(C), persistent=False)
@@ -187,103 +195,111 @@ class DeltaHebbianBlock(nn.Module):
     def forward(self, out):
         """Chunkwise parallel delta rule.
 
-        out: (B, T, D) hidden states (used as keys).
-
-        returns: (B, T, D) augmented with memory reads.
+        out: (B, T, D).
+        returns: (B, T, D) with memory reads added.
         """
         B, T, D = out.shape
-        H, d = self.n_heads, self.head_dim
-        C = self.chunk_size
-        out32 = out.float()
+        H, d, C = self.n_heads, self.head_dim, self.chunk_size
+        x = out.float()
 
-        # projections — write key is previous position, read key is current
-        rk = F.normalize(out32.view(B, T, H, d), dim=-1).transpose(1, 2).float()
-        wk = F.pad(rk[:, :, :-1], (0, 0, 1, 0))
-        v = self.proj_write(out32).view(B, T, H, d).transpose(1, 2).float()
-        beta = torch.sigmoid(self.proj_beta(out32)).transpose(1, 2).unsqueeze(-1)
+        # -- projections --
+        rk = F.normalize(x.view(B, T, H, d), dim=-1).transpose(1, 2)  # read key: current position
+        wk = F.pad(rk[:, :, :-1], (0, 0, 1, 0))                      # write key: previous position
+        v = self.proj_write(x).view(B, T, H, d).transpose(1, 2)       # value to store
+        beta = torch.sigmoid(self.proj_beta(x)).transpose(1, 2).unsqueeze(-1)  # write gate (B, H, T, 1)
 
-        # input-dependent decay: g = -A · softplus(proj_alpha(x) + dt_bias)
-        decay = -self.A_log.exp().view(1, 1, H) * F.softplus(self.proj_alpha(out32) + self.dt_bias)
-        decay = decay.transpose(1, 2)  # (B, H, T)
+        # -- input-dependent decay --
+        log_decay = -self.A_log.exp().view(1, 1, H) * F.softplus(self.proj_alpha(x) + self.dt_bias)
+        log_decay = log_decay.transpose(1, 2)  # (B, H, T)
 
-        # scale v and wk by beta
-        v = v * beta
-        wk_beta = wk * beta
+        # -- scale by beta --
+        v_scaled = v * beta
+        wk_scaled = wk * beta
 
-        # pad to chunk boundary
-        pad_len = (C - (T % C)) % C
-        if pad_len > 0:
-            rk = F.pad(rk, (0, 0, 0, pad_len))
-            wk = F.pad(wk, (0, 0, 0, pad_len))
-            v = F.pad(v, (0, 0, 0, pad_len))
-            wk_beta = F.pad(wk_beta, (0, 0, 0, pad_len))
-            decay = F.pad(decay, (0, pad_len))
-        T_padded = rk.shape[2]
-        num_chunks = T_padded // C
+        # -- pad to chunk boundary --
+        pad = (C - (T % C)) % C
+        if pad > 0:
+            rk = F.pad(rk, (0, 0, 0, pad))
+            wk = F.pad(wk, (0, 0, 0, pad))
+            v_scaled = F.pad(v_scaled, (0, 0, 0, pad))
+            wk_scaled = F.pad(wk_scaled, (0, 0, 0, pad))
+            log_decay = F.pad(log_decay, (0, pad))
 
-        # reshape into chunks
-        rk = rk.view(B, H, num_chunks, C, d)
-        wk = wk.view(B, H, num_chunks, C, d)
-        v = v.view(B, H, num_chunks, C, d)
-        wk_beta = wk_beta.view(B, H, num_chunks, C, d)
-        decay = decay.view(B, H, num_chunks, C)
+        T_pad = rk.shape[2]
+        N = T_pad // C  # number of chunks
 
-        # cumulative decay within each chunk
-        cum_decay = decay.cumsum(-1)
-        decay_exp = cum_decay.unsqueeze(-1).exp()
-        L_mask = (cum_decay.unsqueeze(-1) - cum_decay.unsqueeze(-2)).tril().exp().tril()
+        # -- reshape into chunks: (B, H, N, C, d) --
+        rk = rk.view(B, H, N, C, d)
+        wk = wk.view(B, H, N, C, d)
+        v_scaled = v_scaled.view(B, H, N, C, d)
+        wk_scaled = wk_scaled.view(B, H, N, C, d)
+        log_decay = log_decay.view(B, H, N, C)
 
-        # WY pre-processing: forward substitution
-        A = -(wk_beta @ wk.transpose(-1, -2) * L_mask).masked_fill(self.causal_mask, 0)
+        # -- decay masks (per chunk, input-dependent) --
+        cum_decay = log_decay.cumsum(-1)                                           # (B, H, N, C)
+        L_mask = (cum_decay.unsqueeze(-1) - cum_decay.unsqueeze(-2)).tril().exp().tril()  # (B, H, N, C, C)
+        decay_exp = cum_decay.unsqueeze(-1).exp()                                  # (B, H, N, C, 1)
+
+        # -- WY correction: solve (I + A)x = b via forward substitution --
+        # A encodes intra-chunk write-key interactions scaled by decay
+        A = -(wk_scaled @ wk.transpose(-1, -2) * L_mask).masked_fill(self.causal_mask, 0)
         A = A.clone()
         for i in range(1, C):
-            A[..., i, :i] = A[..., i, :i].clone() + (A[..., i, :i].clone().unsqueeze(-1) * A[..., :i, :i].clone()).sum(-2)
+            A[..., i, :i] = A[..., i, :i].clone() + (
+                A[..., i, :i].clone().unsqueeze(-1) * A[..., :i, :i].clone()
+            ).sum(-2)
         A = A + self.eye_C
 
-        v = A @ v
-        wk_cumdecay = A @ (wk_beta * decay_exp)
+        # corrected values and keys
+        v_corrected = A @ v_scaled
+        wk_corrected = A @ (wk_scaled * decay_exp)
 
-        # chunk-by-chunk state propagation
-        S = out32.new_zeros(B, H, d, d)
-        o = torch.zeros_like(v)
+        # -- chunk-by-chunk state propagation --
+        S = x.new_zeros(B, H, d, d)  # memory state
+        o = torch.zeros_like(v_scaled)
 
-        for i in range(num_chunks):
-            rk_i, wk_i, v_i = rk[:, :, i], wk[:, :, i], v[:, :, i]
-            L_i = L_mask[:, :, i]
-            de_i = decay_exp[:, :, i]
-            cd_i = cum_decay[:, :, i]
+        for i in range(N):
+            rk_i = rk[:, :, i]         # (B, H, C, d)
+            wk_i = wk[:, :, i]
+            v_i = v_corrected[:, :, i]
+            cd_i = cum_decay[:, :, i]   # (B, H, C)
 
-            attn = (rk_i @ wk_i.transpose(-1, -2) * L_i).masked_fill(self.causal_mask, 0)
-            v_new = v_i - wk_cumdecay[:, :, i] @ S
-            o[:, :, i] = (rk_i * de_i) @ S + attn @ v_new
+            # intra-chunk attention (read key × write key, masked causal)
+            intra_attn = (rk_i @ wk_i.transpose(-1, -2) * L_mask[:, :, i]).masked_fill(self.causal_mask, 0)
 
-            dw = (cd_i[:, :, -1:] - cd_i).exp().unsqueeze(-1)
-            chunk_total = cd_i[:, :, -1].exp().view(B, H, 1, 1)
-            S = chunk_total * S + (wk_i * dw).transpose(-1, -2) @ v_new
+            # delta correction: subtract what S already predicts
+            v_new = v_i - wk_corrected[:, :, i] @ S
 
-        # flatten chunks, unpad
-        o = o.view(B, H, T_padded, d).transpose(1, 2).reshape(B, T_padded, D)[:, :T]
+            # output: inter-chunk read + intra-chunk attention
+            inter_read = (rk_i * decay_exp[:, :, i]) @ S
+            o[:, :, i] = inter_read + intra_attn @ v_new
+
+            # advance state: decay + accumulate writes
+            chunk_end_decay = cd_i[:, :, -1].exp().view(B, H, 1, 1)
+            position_decay = (cd_i[:, :, -1:] - cd_i).exp().unsqueeze(-1)
+            S = chunk_end_decay * S + (wk_i * position_decay).transpose(-1, -2) @ v_new
+
+        # -- output: flatten chunks, unpad, project --
+        o = o.view(B, H, T_pad, d).transpose(1, 2).reshape(B, T_pad, D)[:, :T]
         return out + self.proj_read(o).to(out.dtype)
 
     def step(self, out, state=None):
-        """Recurrent form for inference.
+        """Sequential recurrence for inference.
 
-        out: (B, D) hidden state (used as key).
-        state: dict with 'W' and 'k_prev', or None.
-
-        returns: (B, D) augmented, new state dict.
+        out: (B, D).
+        returns: (B, D), new state.
         """
         B, D = out.shape
         H, d = self.n_heads, self.head_dim
 
+        # projections
         rk = F.normalize(out.view(B * H, d), dim=-1)
         v = self.proj_write(out).view(B * H, d)
         beta = torch.sigmoid(self.proj_beta(out)).view(B * H, 1, 1)
-
-        # input-dependent decay
         log_decay = -self.A_log.exp() * F.softplus(self.proj_alpha(out) + self.dt_bias)
         decay = log_decay.exp().view(B * H, 1, 1)
 
+        # load or init state
         if state is not None:
             W = state["W"].view(B * H, d, d)
             wk = state["k_prev"].view(B * H, d)
@@ -291,7 +307,7 @@ class DeltaHebbianBlock(nn.Module):
             W = out.new_zeros(B * H, d, d)
             wk = out.new_zeros(B * H, d)
 
-        # decay, then read, then write
+        # decay, read, then write
         W = decay * W
         read = (W @ rk.unsqueeze(-1)).squeeze(-1)
         error = (v - (W @ wk.unsqueeze(-1)).squeeze(-1)).unsqueeze(-1)
