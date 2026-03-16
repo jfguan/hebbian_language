@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.hebbian_components import CausalConv, GatedMLP, HebbianBlock
+from models.hebbian_components import CausalConv, GatedMLP, DeltaHebbianBlock
 
 
 @dataclass
@@ -46,7 +46,7 @@ class HebbianLayer(nn.Module):
         self.norm = RMSNorm(cfg.d_model)
         self.mlp = GatedMLP(cfg.d_model, expand=cfg.expand)
         self.conv = CausalConv(d_inner, d_conv=cfg.d_conv)
-        self.memory = HebbianBlock(
+        self.memory = DeltaHebbianBlock(
             d_model=cfg.d_model,
             head_dim=cfg.head_dim,
         )

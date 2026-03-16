@@ -11,7 +11,7 @@ def build_model(model_config, vocab_size: int):
     fields["vocab_size"] = vocab_size
 
     if model_type == ModelType.HEBBIAN:
-        from .hebbian_minimal import Config, HebbianConv
+        from .hebbian import Config, HebbianConv
         config = Config(**{k: v for k, v in fields.items() if hasattr(Config, k)})
         return HebbianConv(config)
     elif model_type == ModelType.HEBBIAN_MAMBA:

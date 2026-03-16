@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mambapy.mamba import MambaBlock, MambaConfig as MambaCfg, RMSNorm
 
-from models.hebbian_components import HebbianBlock
+from models.hebbian_components import DeltaHebbianBlock
 
 
 @dataclass
@@ -35,7 +35,7 @@ class HebbianMambaLayer(nn.Module):
 
         self.norm = RMSNorm(cfg.d_model)
         self.mamba = MambaBlock(mcfg)
-        self.memory = HebbianBlock(
+        self.memory = DeltaHebbianBlock(
             d_model=cfg.d_model,
             head_dim=cfg.head_dim,
         )
