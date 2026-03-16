@@ -55,96 +55,126 @@ class GatedMLP(nn.Module):
 
 
 class HebbianBlock(nn.Module):
-    """D*D associative memory: W_t = γW_{t-1} + v_t⊗k_{t-1}, read_t = W_t·q_t.
+    """Block-diagonal associative memory with delta rule.
 
-    Chunkwise parallel O(TC·D + T·D²) for training, recurrent O(D²) for inference.
+    n_heads independent head_dim×head_dim memory matrices.
+    Input is the key. proj_write produces values. proj_read is the output projection.
+    Delta rule: W_t = γW_{t-1} + β_t(v_t - W_{t-1}k_t)k_t^T
     """
 
-    def __init__(self, d_model: int, chunk_size: int = 64, memory_alpha: float = 0.03):
+    def __init__(self, d_model: int, head_dim: int = 128):
         super().__init__()
+        assert d_model % head_dim == 0
         self.d_model = d_model
-        self.chunk_size = chunk_size
+        self.head_dim = head_dim
+        self.n_heads = d_model // head_dim
 
         self.proj_write = nn.Linear(d_model, d_model, bias=False)
         self.proj_read = nn.Linear(d_model, d_model, bias=False)
-        self.decay = nn.Parameter(torch.tensor(4.6))  # σ(4.6) ≈ 0.99
-        self.log_alpha = nn.Parameter(torch.tensor(memory_alpha).log())
 
-    @property
-    def alpha(self):
-        return self.log_alpha.exp()
+        # per-head decay: σ(4.6) ≈ 0.99
+        self.decay = nn.Parameter(torch.full((self.n_heads,), 4.6))
+
+        # data-dependent learning rate for delta rule
+        self.proj_beta = nn.Linear(d_model, self.n_heads, bias=False)
 
     def forward(self, out):
-        """Chunkwise parallel form.
+        """Chunkwise parallel delta rule.
 
-        out: (B, T, D) hidden states.
+        out: (B, T, D) hidden states (used as keys).
 
         returns: (B, T, D) augmented with memory reads.
         """
         B, T, D = out.shape
-        C = self.chunk_size
+        H, d = self.n_heads, self.head_dim
+        C = 64
         out32 = out.float()
 
-        gamma = torch.sigmoid(self.decay)
-        log_gamma = gamma.log()
+        # projections
+        k = F.normalize(out32.view(B, T, H, d), dim=-1).transpose(1, 2).float()  # (B, H, T, d)
+        v = self.proj_write(out32).view(B, T, H, d).transpose(1, 2).float()
+        beta = torch.sigmoid(self.proj_beta(out32)).transpose(1, 2).unsqueeze(-1)  # (B, H, T, 1)
 
-        v = self.proj_write(out32)
-        wk = F.pad(out32[:, :-1], (0, 0, 1, 0))
-        rk = out32
+        # scale v and k by beta
+        v = v * beta
+        k_beta = k * beta
 
-        W = out32.new_zeros(B, D, D)
-        reads_list = []
+        # pad to chunk boundary
+        pad_len = (C - (T % C)) % C
+        if pad_len > 0:
+            k = F.pad(k, (0, 0, 0, pad_len))
+            v = F.pad(v, (0, 0, 0, pad_len))
+            k_beta = F.pad(k_beta, (0, 0, 0, pad_len))
+        T_padded = k.shape[2]
+        num_chunks = T_padded // C
 
-        for start in range(0, T, C):
-            end = min(start + C, T)
-            Ci = end - start
-            p = torch.arange(Ci, device=out.device)
+        # precompute decay masks — constant per head, reused across all chunks
+        log_gamma = torch.sigmoid(self.decay).log()  # (H,)
+        positions = torch.arange(C, device=out.device)
+        cum_decay = (positions + 1) * log_gamma.view(H, 1)  # (H, C)
+        L_mask = (cum_decay.unsqueeze(-1) - cum_decay.unsqueeze(-2)).tril().exp().tril()  # (H, C, C)
+        L_mask = L_mask.view(1, H, 1, C, C)  # broadcastable with (B, H, num_chunks, C, C)
+        decay_exp = cum_decay.unsqueeze(-1).exp().view(1, H, 1, C, 1)  # broadcastable
+        chunk_total_decay = cum_decay[:, -1].exp().view(1, H, 1, 1)  # decay across full chunk
+        causal_mask = torch.triu(torch.ones(C, C, device=out.device, dtype=torch.bool), diagonal=1)
 
-            rk_c, wk_c, v_c = rk[:, start:end], wk[:, start:end], v[:, start:end]
+        # reshape into chunks: (B, H, num_chunks, C, d)
+        k = k.view(B, H, num_chunks, C, d)
+        v = v.view(B, H, num_chunks, C, d)
+        k_beta = k_beta.view(B, H, num_chunks, C, d)
 
-            # Inter-chunk: γ^l * (W_prev @ rk_c[l])
-            inter = torch.matmul(W, rk_c.transpose(1, 2)).transpose(1, 2)
-            inter = inter * (gamma ** p)[None, :, None]
+        # WY pre-processing: solve (I + A) for corrected values
+        diag_mask = torch.triu(torch.ones(C, C, device=out.device, dtype=torch.bool))
+        A = -(k_beta @ k.transpose(-1, -2) * L_mask).masked_fill(diag_mask, 0)
+        A = A.clone()
+        for i in range(1, C):
+            A[..., i, :i] = A[..., i, :i].clone() + (A[..., i, :i].clone().unsqueeze(-1) * A[..., :i, :i].clone()).sum(-2)
+        A = A + torch.eye(C, device=out.device)
 
-            # Intra-chunk: (M ⊙ S) @ v
-            S = torch.bmm(rk_c, wk_c.transpose(1, 2))
-            diffs = (p[:, None] - 1 - p[None, :]).clamp(min=0)
-            causal = p[:, None] > p[None, :]
-            M = torch.exp(diffs * log_gamma) * causal
-            intra = torch.bmm(S * M, v_c)
+        v = A @ v
+        k_cumdecay = A @ (k_beta * decay_exp)
 
-            reads_list.append(inter + intra)
+        # chunk-by-chunk state propagation
+        S = out32.new_zeros(B, H, d, d)
+        o = torch.zeros_like(v)
+        L = L_mask.squeeze(2)           # (1, H, C, C)
+        de = decay_exp.squeeze(2)       # (1, H, C, 1)
+        dw = ((cum_decay[:, -1:] - cum_decay).exp()).unsqueeze(-1)  # (H, C, 1)
 
-            # Advance W: γ^Ci · W + Σ_l γ^(Ci-1-l) · v[l] ⊗ wk[l]
-            gw = (gamma ** (Ci - 1 - p))[None, :, None]
-            W = gamma ** Ci * W + torch.bmm((v_c * gw).transpose(1, 2), wk_c)
+        for i in range(num_chunks):
+            k_i, v_i = k[:, :, i], v[:, :, i]
+            attn = (k_i @ k_i.transpose(-1, -2) * L).masked_fill(causal_mask, 0)
+            v_new = v_i - k_cumdecay[:, :, i] @ S
+            o[:, :, i] = (k_i * de) @ S + attn @ v_new
+            S = chunk_total_decay * S + (k_i * dw).transpose(-1, -2) @ v_new
 
-        reads = torch.cat(reads_list, dim=1)
-        return out + self.alpha * self.proj_read(reads).to(out.dtype)
+        # flatten chunks, unpad
+        o = o.view(B, H, T_padded, d).transpose(1, 2).reshape(B, T_padded, D)[:, :T]
+        return out + self.proj_read(o).to(out.dtype)
 
     def step(self, out, state=None):
-        """Recurrent form.
+        """Recurrent form for inference.
 
-        out: (B, D) hidden state.
-        state: dict with 'W' and 'r_prev', or None.
+        out: (B, D) hidden state (used as key).
+        state: dict with 'W', or None.
 
         returns: (B, D) augmented, new state dict.
         """
         B, D = out.shape
+        H, d = self.n_heads, self.head_dim
 
-        if state is None:
-            W = out.new_zeros(B, D, D)
-            r_prev = out.new_zeros(B, D)
-        else:
-            W = state["W"]
-            r_prev = state["r_prev"]
+        k = F.normalize(out.view(B * H, d), dim=-1)
+        v = self.proj_write(out).view(B * H, d)
+        beta = torch.sigmoid(self.proj_beta(out)).view(B * H, 1, 1)
+        gamma = torch.sigmoid(self.decay).repeat(B).view(B * H, 1, 1)
+        W = state["W"].view(B * H, d, d) if state is not None else out.new_zeros(B * H, d, d)
 
-        gamma = torch.sigmoid(self.decay)
-        write = torch.einsum("bi,bj->bij", self.proj_write(out), r_prev)
-        read = torch.einsum("bij,bj->bi", W, out)
-        W = gamma * W + write
+        # read with key
+        read = (W @ k.unsqueeze(-1)).squeeze(-1)
 
-        augmented = out + self.alpha * self.proj_read(read)
+        # delta rule: W = γW + β(v - Wk)k^T
+        error = (v - read).unsqueeze(-1)
+        W.mul_(gamma).add_(beta * error @ k.unsqueeze(-2))
 
-        new_state = {"W": W, "r_prev": out}
-        return augmented, new_state
+        read = read.view(B, D)
+        return out + self.proj_read(read), {"W": W.view(B, H, d, d)}

@@ -24,7 +24,7 @@ class Config:
     expand: int = 2
     n_layers: int = 8
     memory_alpha: float = 0.03
-    chunk_size: int = 64
+    head_dim: int = 128
 
 
 class RMSNorm(nn.Module):
@@ -48,8 +48,7 @@ class HebbianLayer(nn.Module):
         self.conv = CausalConv(d_inner, d_conv=cfg.d_conv)
         self.memory = HebbianBlock(
             d_model=cfg.d_model,
-            chunk_size=cfg.chunk_size,
-            memory_alpha=cfg.memory_alpha,
+            head_dim=cfg.head_dim,
         )
 
     def forward(self, x):
