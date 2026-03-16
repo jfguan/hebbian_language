@@ -62,22 +62,28 @@ class HebbianBlock(nn.Module):
     Delta rule: W_t = γW_{t-1} + β_t(v_t - W_{t-1}k_t)k_t^T
     """
 
-    def __init__(self, d_model: int, head_dim: int = 128):
+    def __init__(self, d_model: int, head_dim: int = 128, chunk_size: int = 64):
         super().__init__()
         assert d_model % head_dim == 0
         self.d_model = d_model
         self.head_dim = head_dim
         self.n_heads = d_model // head_dim
+        self.chunk_size = chunk_size
 
         self.proj_write = nn.Linear(d_model, d_model, bias=False)
         self.proj_read = nn.Linear(d_model, d_model, bias=False)
-        nn.init.zeros_(self.proj_read.weight)
 
         # per-head decay: σ(4.6) ≈ 0.99
         self.decay = nn.Parameter(torch.full((self.n_heads,), 4.6))
 
         # data-dependent learning rate for delta rule
         self.proj_beta = nn.Linear(d_model, self.n_heads, bias=False)
+
+        # static masks (don't depend on input or learned params)
+        C = chunk_size
+        self.register_buffer("positions", torch.arange(C), persistent=False)
+        self.register_buffer("causal_mask", torch.triu(torch.ones(C, C, dtype=torch.bool), diagonal=0), persistent=False)
+        self.register_buffer("diag_mask", torch.triu(torch.ones(C, C, dtype=torch.bool)), persistent=False)
 
     def forward(self, out):
         """Chunkwise parallel delta rule.
@@ -88,7 +94,7 @@ class HebbianBlock(nn.Module):
         """
         B, T, D = out.shape
         H, d = self.n_heads, self.head_dim
-        C = 64
+        C = self.chunk_size
         out32 = out.float()
 
         # projections — write key is previous position, read key is current
@@ -111,15 +117,13 @@ class HebbianBlock(nn.Module):
         T_padded = rk.shape[2]
         num_chunks = T_padded // C
 
-        # precompute decay masks — constant per head, reused across all chunks
+        # decay masks — depend on learned decay but not on input
         log_gamma = torch.sigmoid(self.decay).log()  # (H,)
-        positions = torch.arange(C, device=out.device)
-        cum_decay = (positions + 1) * log_gamma.view(H, 1)  # (H, C)
+        cum_decay = (self.positions + 1) * log_gamma.view(H, 1)  # (H, C)
         L_mask = (cum_decay.unsqueeze(-1) - cum_decay.unsqueeze(-2)).tril().exp().tril()  # (H, C, C)
-        L_mask = L_mask.view(1, H, 1, C, C)  # broadcastable with (B, H, num_chunks, C, C)
-        decay_exp = cum_decay.unsqueeze(-1).exp().view(1, H, 1, C, 1)  # broadcastable
-        chunk_total_decay = cum_decay[:, -1].exp().view(1, H, 1, 1)  # decay across full chunk
-        causal_mask = torch.triu(torch.ones(C, C, device=out.device, dtype=torch.bool), diagonal=1)
+        L_mask = L_mask.view(1, H, 1, C, C)
+        decay_exp = cum_decay.unsqueeze(-1).exp().view(1, H, 1, C, 1)
+        chunk_total_decay = cum_decay[:, -1].exp().view(1, H, 1, 1)
 
         # reshape into chunks: (B, H, num_chunks, C, d)
         rk = rk.view(B, H, num_chunks, C, d)
@@ -128,8 +132,7 @@ class HebbianBlock(nn.Module):
         wk_beta = wk_beta.view(B, H, num_chunks, C, d)
 
         # WY pre-processing: solve (I + A) for corrected values
-        diag_mask = torch.triu(torch.ones(C, C, device=out.device, dtype=torch.bool))
-        A = -(wk_beta @ wk.transpose(-1, -2) * L_mask).masked_fill(diag_mask, 0)
+        A = -(wk_beta @ wk.transpose(-1, -2) * L_mask).masked_fill(self.diag_mask, 0)
         A = A.clone()
         for i in range(1, C):
             A[..., i, :i] = A[..., i, :i].clone() + (A[..., i, :i].clone().unsqueeze(-1) * A[..., :i, :i].clone()).sum(-2)
@@ -147,7 +150,7 @@ class HebbianBlock(nn.Module):
 
         for i in range(num_chunks):
             rk_i, wk_i, v_i = rk[:, :, i], wk[:, :, i], v[:, :, i]
-            attn = (rk_i @ wk_i.transpose(-1, -2) * L).masked_fill(causal_mask, 0)
+            attn = (rk_i @ wk_i.transpose(-1, -2) * L).masked_fill(self.causal_mask, 0)
             v_new = v_i - wk_cumdecay[:, :, i] @ S
             o[:, :, i] = (rk_i * de) @ S + attn @ v_new
             S = chunk_total_decay * S + (wk_i * dw).transpose(-1, -2) @ v_new
