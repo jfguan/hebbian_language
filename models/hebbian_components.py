@@ -239,9 +239,9 @@ class DeltaHebbianBlock(nn.Module):
         cum_decay = log_decay.cumsum(-1)                                           # (B, H, N, C)
         L_mask = (cum_decay.unsqueeze(-1) - cum_decay.unsqueeze(-2)).tril().exp().tril()  # (B, H, N, C, C)
         decay_exp = cum_decay.unsqueeze(-1).exp()                                  # (B, H, N, C, 1)
+        chunk_end_decay = cum_decay[:, :, :, -1].exp()                             # (B, H, N)
 
         # -- WY correction: solve (I + A)x = b via forward substitution --
-        # A encodes intra-chunk write-key interactions scaled by decay
         A = -(wk_scaled @ wk.transpose(-1, -2) * L_mask).masked_fill(self.causal_mask, 0)
         A = A.clone()
         for i in range(1, C):
@@ -250,34 +250,22 @@ class DeltaHebbianBlock(nn.Module):
             ).sum(-2)
         A = A + self.eye_C
 
-        # corrected values and keys
-        v_corrected = A @ v_scaled
-        wk_corrected = A @ (wk_scaled * decay_exp)
+        # -- precompute loop-invariant terms --
+        intra_attn = (rk @ wk.transpose(-1, -2) * L_mask).masked_fill(self.causal_mask, 0)  # (B, H, N, C, C)
+        rk_decay = rk * decay_exp                                                            # (B, H, N, C, d)
+        tail_decay = (cum_decay[:, :, :, -1:] - cum_decay).unsqueeze(-1).exp()               # (B, H, N, C, 1)
+        wk_pos = (wk * tail_decay).transpose(-1, -2)                                         # (B, H, N, d, C)
 
-        # -- chunk-by-chunk state propagation --
-        S = x.new_zeros(B, H, d, d)  # memory state
-        o = torch.zeros_like(v_scaled)
+        # -- chunk-by-chunk state propagation (only S is sequential) --
+        S = x.new_zeros(B, H, d, d)
+        o = x.new_zeros(B, H, N, C, d)
 
         for i in range(N):
-            rk_i = rk[:, :, i]         # (B, H, C, d)
-            wk_i = wk[:, :, i]
-            v_i = v_corrected[:, :, i]
-            cd_i = cum_decay[:, :, i]   # (B, H, C)
-
-            # intra-chunk attention (read key × write key, masked causal)
-            intra_attn = (rk_i @ wk_i.transpose(-1, -2) * L_mask[:, :, i]).masked_fill(self.causal_mask, 0)
-
-            # delta correction: subtract what S already predicts
-            v_new = v_i - wk_corrected[:, :, i] @ S
-
-            # output: inter-chunk read + intra-chunk attention
-            inter_read = (rk_i * decay_exp[:, :, i]) @ S
-            o[:, :, i] = inter_read + intra_attn @ v_new
-
-            # advance state: decay + accumulate writes
-            chunk_end_decay = cd_i[:, :, -1].exp().view(B, H, 1, 1)
-            position_decay = (cd_i[:, :, -1:] - cd_i).exp().unsqueeze(-1)
-            S = chunk_end_decay * S + (wk_i * position_decay).transpose(-1, -2) @ v_new
+            v_corr = A[:, :, i] @ v_scaled[:, :, i]
+            wk_corr = A[:, :, i] @ (wk_scaled[:, :, i] * decay_exp[:, :, i])
+            v_new = v_corr - wk_corr @ S
+            o[:, :, i] = rk_decay[:, :, i] @ S + intra_attn[:, :, i] @ v_new
+            S = chunk_end_decay[:, :, i, None, None] * S + wk_pos[:, :, i] @ v_new
 
         # -- output: flatten chunks, unpad, project --
         o = o.view(B, H, T_pad, d).transpose(1, 2).reshape(B, T_pad, D)[:, :T]

@@ -76,7 +76,6 @@ GDN_18M = ModelConfig(
     expand=2,
     d_state=16,
     num_heads=4,
-    head_dim=128,
 )
 
 # -- Mamba baseline --

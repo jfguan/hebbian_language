@@ -7,7 +7,6 @@ Based on: "Gated Delta Networks: Improving Mamba2 with Delta Rule" (ICLR 2025)
 Reference: NVlabs/GatedDeltaNet, fla naive_chunk_gated_delta_rule
 """
 
-import math
 from dataclasses import dataclass
 
 import torch
@@ -50,7 +49,7 @@ class GatedDeltaNetBlock(nn.Module):
     Output:     o = S @ q
     """
 
-    def __init__(self, d_model: int, num_heads: int = 4, chunk_size: int = 64):
+    def __init__(self, d_model: int, num_heads: int = 4, d_conv: int = 4, chunk_size: int = 64):
         super().__init__()
         assert d_model % num_heads == 0
         self.d_model = d_model
@@ -63,6 +62,11 @@ class GatedDeltaNetBlock(nn.Module):
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.gate_proj = nn.Linear(d_model, d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+        # short convs on q, k, v (local mixing before delta rule)
+        self.q_conv = CausalConv(d_model, d_conv)
+        self.k_conv = CausalConv(d_model, d_conv)
+        self.v_conv = CausalConv(d_model, d_conv)
 
         self.beta_proj = nn.Linear(d_model, num_heads, bias=False)
         self.alpha_proj = nn.Linear(d_model, num_heads, bias=False)
@@ -81,9 +85,9 @@ class GatedDeltaNetBlock(nn.Module):
         H, K = self.num_heads, self.head_dim
         C = self.chunk_size
 
-        q = l2norm(self.q_proj(x).view(B, T, H, K)) / (K ** 0.5)
-        k = l2norm(self.k_proj(x).view(B, T, H, K))
-        v = self.v_proj(x).view(B, T, H, K)
+        q = l2norm(F.silu(self.q_conv(self.q_proj(x))).view(B, T, H, K)) / (K ** 0.5)
+        k = l2norm(F.silu(self.k_conv(self.k_proj(x))).view(B, T, H, K))
+        v = F.silu(self.v_conv(self.v_proj(x))).view(B, T, H, K)
         gate = self.gate_proj(x).view(B, T, H, K)
         beta = self.beta_proj(x).sigmoid()
         decay = -self.A_log.exp().view(1, 1, H) * F.softplus(self.alpha_proj(x) + self.dt_bias)
@@ -175,14 +179,22 @@ class GatedDeltaNetBlock(nn.Module):
         B, D = x.shape
         H, K = self.num_heads, self.head_dim
 
-        q = l2norm(self.q_proj(x).view(B, H, K)) / (K ** 0.5)
-        k = l2norm(self.k_proj(x).view(B, H, K))
-        v = self.v_proj(x).view(B, H, K)
+        q_conv_st = state["q_conv"] if state else None
+        k_conv_st = state["k_conv"] if state else None
+        v_conv_st = state["v_conv"] if state else None
+
+        q_raw, q_conv_st = self.q_conv.step(self.q_proj(x), q_conv_st)
+        k_raw, k_conv_st = self.k_conv.step(self.k_proj(x), k_conv_st)
+        v_raw, v_conv_st = self.v_conv.step(self.v_proj(x), v_conv_st)
+
+        q = l2norm(F.silu(q_raw).view(B, H, K)) / (K ** 0.5)
+        k = l2norm(F.silu(k_raw).view(B, H, K))
+        v = F.silu(v_raw).view(B, H, K)
         gate = self.gate_proj(x).view(B, H, K)
         beta = self.beta_proj(x).sigmoid().unsqueeze(-1)
         decay = (-self.A_log.exp() * F.softplus(self.alpha_proj(x) + self.dt_bias)).exp().view(B, H, 1, 1)
 
-        S = state if state is not None else x.new_zeros(B, H, K, K)
+        S = state["S"] if state else x.new_zeros(B, H, K, K)
 
         # Decay state
         S = S * decay
@@ -196,36 +208,27 @@ class GatedDeltaNetBlock(nn.Module):
         o = self.norm(o) * F.silu(gate)
         o = self.out_proj(o.reshape(B, D))
 
-        return o, S
+        return o, {"S": S, "q_conv": q_conv_st, "k_conv": k_conv_st, "v_conv": v_conv_st}
 
 
 class GatedDeltaNetLayer(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
-        d_inner = cfg.expand * cfg.d_model
         self.delta_norm = RMSNorm(cfg.d_model)
-        self.delta = GatedDeltaNetBlock(cfg.d_model, num_heads=cfg.num_heads, chunk_size=cfg.chunk_size)
+        self.delta = GatedDeltaNetBlock(cfg.d_model, num_heads=cfg.num_heads, d_conv=cfg.d_conv, chunk_size=cfg.chunk_size)
         self.mlp_norm = RMSNorm(cfg.d_model)
         self.mlp = GatedMLP(cfg.d_model, expand=cfg.expand)
-        self.conv = CausalConv(d_inner, d_conv=cfg.d_conv)
 
     def forward(self, x):
         x = x + self.delta(self.delta_norm(x))
         normed = self.mlp_norm(x)
-        x = x + self.mlp(normed, self.conv(self.mlp.project_up(normed)))
-        return x
+        return x + self.mlp(normed, self.mlp.project_up(normed))
 
     def step(self, x, state=None):
-        conv_st = state["conv"] if state else None
-        delta_st = state["delta"] if state else None
-
-        out, delta_st = self.delta.step(self.delta_norm(x), delta_st)
+        out, delta_st = self.delta.step(self.delta_norm(x), state)
         x = x + out
         normed = self.mlp_norm(x)
-        val, conv_st = self.conv.step(self.mlp.project_up(normed), conv_st)
-        x = x + self.mlp(normed, val)
-
-        return x, {"conv": conv_st, "delta": delta_st}
+        return x + self.mlp(normed, self.mlp.project_up(normed)), delta_st
 
 
 class GatedDeltaNet(nn.Module):
