@@ -48,6 +48,19 @@ Every new token, we multiple M by decay (γ) so old keys fade and "make room" fo
 Fundementally, compared to full attention which retains all kv vectors crisply, linear attention compression can only approximate. The cost of faster speed is worse recall, which many hybrids like Jamba, Olmo Hybrid, Kimi Linear mitigate by using linear and full attention layers in a 3:1 ratio for example, to try and reduce the cost.
 
 
+# Convolutions are mostly what you need
+Mambaout showed for vision models, the SSM block doesn't contribute much and simple convolutions are most of the contribution.
+It makes sense for language also. If you stack 6 convolution + MLP layers and each conv has a width of 4 tokens, you actually have a 4 + (4-1) * 5 = 19 nonlinear token window
+
+If layer 1 has information on token t and past three tokens, layer 2 mixes t and past 6 tokens
+Layer 1: [t to t-3]
+Layer 2: [t to t-3, t-1 to t-4, t-2 to t-5, t-3 to t-6]
+...
+
+Simple convolutions work well because a lot language modeling is immediate local context, influenced by a few keywords in past context. Suspecting attention is overkill because perfect recall for filler words likely is clogging memory - tricks like attention sinks are needed to actively forget irrelelvant words.
+
+However, beyond immediate local context, you still need a mechanism for long term recall, which this model adds with the hebbian matrix.
+
 # Hebbian Linear Token Shift
 Originally, the hebbian memory matrix augmented Mamba to mitigate recall issues, stacking layers of MambaBlock -> HebbianBlock.
 
@@ -55,21 +68,27 @@ Critically, this matrix uses a new token shift Opus 4.5 seredipitously discovere
 
 Linear architectures all create the q/k/v vectors via projections for the memory matrix. However, during prediction, we're storing v⊗k, which is "symmetric". We're storing the key for the new predicted token with the "thinking state" together, which isn't very useful.
 
-Going back to our example:
+Going back to the example:
 The dog barked. The man saw the dog ____?
 
-in our memory matrix, we have the key value pairs of "dog": "thinking about dog"
-and "barked": "thinking about barking"
+A symmetric memory matrix contains the key value pairs of:
+"dog": "thinking about dog"
+"barked": "thinking about barking"
 
-We need to predict "bark", so the query vector learns to transform into something close to the value of "barked", so we retrieve our previous thinking state and predict "bark" correctly.
+We need to predict "bark", so query vector learns to transform into something like "barked", retrieving the "bark thinking state" to predict "bark". A big responsibility of Q/K projections are spent breaking the symmetry, although they're more expressive as well.
 
-The Hebbian token shift instead uses the previous word directly as the key to break the symmetry, so the key value pairs look like "the": "thinking about dog",  "dog": "thinking about barking". Now, when we get to the second dog in the sentence, we use the previous token "dog" as the key, and retrieve "thinking about barking" and predict bark. 
+The Hebbian token shift breaks the symmetry by uses the previous word directly as the key. The key value pairs look like:
 
-This skips the Q and K projections that produce q/k, which is around 12.5% of the layer parameters
+"the": "thinking about dog"
+"dog": "thinking about barking"
 
+To know what I should be thinking about now, just use the previous token as a primer.
+Predicting the final word, we use the previous token "dog" as the key, which last time was followed by the "thinking about barking" state.
 
+This skips the Q and K projections which is 12.5% of the layer parameters at MLP expand factor of 4, or 25% at expand factor of 2.
 
-I believe only Mamba 3 does something similar trapazoidal keys, and RWKV-7's lerp which does a weighted average of the previous key and the current but keeps the QK projections.
+I believe only Mamba 3 uses trapazoidal keys, and RWKV-7's lerp uses weighted averages but both still keep a form of the QK
+
 
 ## Results
 A full-rank $d \times d$ associative memory matrix augmenting each layer of a language model. The memory accumulates outer-product associations over the context at $O(Td^2)$ cost — linear in sequence length — and injects retrieved content into the residual stream via a skip connection.

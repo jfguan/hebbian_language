@@ -7,6 +7,7 @@ from data.loader import DatasetName
 class ModelType(str, Enum):
     HEBBIAN = "hebbian"
     DELTA_HEBBIAN = "delta_hebbian"
+    CONV_ONLY = "conv_only"
     MAMBA = "mamba"
     GDN = "gdn"
 
@@ -60,7 +61,7 @@ HEBBIAN_18M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.2,
+    memory_alpha=0.1,
 )
 
 
@@ -73,7 +74,7 @@ HEBBIAN_100M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.2,
+    memory_alpha=0.1,
 )
 
 DELTA_HEBBIAN_18M = ModelConfig(
@@ -85,8 +86,8 @@ DELTA_HEBBIAN_18M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.2,
-    head_dim=128,
+    memory_alpha=0.1,
+    head_dim=256,
     delta_layers="6,7",
 )
 
@@ -99,8 +100,8 @@ DELTA_HEBBIAN_100M = ModelConfig(
     expand=2,
     d_state=16,
     chunk_size=64,
-    memory_alpha=0.2,
-    head_dim=128,
+    memory_alpha=0.1,
+    head_dim=256,
     delta_layers="10,11",
 )
 
@@ -114,6 +115,17 @@ GDN_18M = ModelConfig(
     d_state=16,
     chunk_size=64,
     num_heads=4,
+)
+
+CONV_ONLY_18M = ModelConfig(
+    name="conv_only",
+    model=ModelType.CONV_ONLY,
+    d_model=512,
+    n_layers=11,
+    d_conv=4,
+    expand=2,
+    d_state=16,
+    chunk_size=64,
 )
 
 MAMBA_18M = ModelConfig(
@@ -131,7 +143,7 @@ MAMBA_100M = ModelConfig(
     name="mamba",
     model=ModelType.MAMBA,
     d_model=1024,
-    n_layers=16,
+    n_layers=15,
     d_conv=4,
     expand=2,
     d_state=16,
@@ -167,12 +179,12 @@ TRAIN_STACK_18M = TrainConfig(
 
 TRAIN_STACK_100M = TrainConfig(
     dataset=DatasetName.THE_STACK,
-    steps=7813,
-    batch_size=2,
+    steps=15626,
+    batch_size=1,
     seq_len=2048,
     lr=3e-4,
-    warmup=500,
+    warmup=1000,
     grad_accum=1,
     eval_interval=200,
-    ckpt_interval=7813,
+    ckpt_interval=2000,
 )

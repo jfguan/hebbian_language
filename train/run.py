@@ -24,8 +24,9 @@ MODELS = {
     "hebbian_18M": C.HEBBIAN_18M,
     "hebbian_100M": C.HEBBIAN_100M,
 
-    "delta_hebbian_18M": C.DELTA_HEBBIAN_18M,
+"delta_hebbian_18M": C.DELTA_HEBBIAN_18M,
     "delta_hebbian_100M": C.DELTA_HEBBIAN_100M,
+    "conv_only_18M": C.CONV_ONLY_18M,
     "gdn_18M": C.GDN_18M,
     "mamba_18M": C.MAMBA_18M,
     "mamba_100M": C.MAMBA_100M,
