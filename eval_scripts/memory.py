@@ -1,23 +1,114 @@
-"""Inspect Hebbian memory parameters and track W behavior during inference."""
+"""Hebbian memory ablation: W updating vs W frozen.
+
+Runs inference on val data, comparing normal inference (W accumulates)
+against a frozen baseline (W reset each token). The delta shows how much
+the memory matrix contributes at different context depths.
+"""
 
 import math
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from models.hebbian_mamba import HebbianMamba
+from data import load_dataset
+from models import build_model
+
+# -- config --
+TOKENS = 8192
+WINDOWS = 4
+SEGMENT = 1024
+DATASET = "the_stack"
+CHECKPOINT = "checkpoints/hebbian_18M_the_stack.pt"
 
 
-def load_model(path, device):
-    ckpt = torch.load(path, map_location=device, weights_only=False)
-    model = HebbianMamba(ckpt["config"]).to(device)
-    model.load_state_dict(ckpt["model"])
+def main():
+    device = "mps"
+    model = setup(device)
+    dataset = load_dataset(DATASET)
+
+    segment_losses = evaluate_windows(model, dataset, device)
+    print_results(segment_losses)
+
+    plot_results(segment_losses, "eval_results/memory.png")
+
+
+def setup(device):
+    checkpoint = torch.load(CHECKPOINT, map_location=device, weights_only=False)
+    model = build_model(checkpoint["model_config"]).to(device)
+    model.load_state_dict(checkpoint["model"])
     model.eval()
+
+    print(
+        f"device={device}  model={checkpoint['model_config'].name}  tokens={TOKENS}  windows={WINDOWS}"
+    )
     return model
+
+
+def evaluate_windows(model, dataset, device):
+    """Compare W-updating vs W-frozen across random val windows.
+
+    Each window gets two passes: one normal (memory accumulates),
+    one frozen (memory reset each step). Per-segment averages reveal
+    how much the memory contributes at each context depth.
+    """
+    n_segments = TOKENS // SEGMENT
+    rng = np.random.default_rng(42)
+
+    # pick non-overlapping windows from val set
+    max_start = len(dataset.val) - TOKENS - 1
+    starts = sorted(rng.choice(max_start, size=WINDOWS, replace=False))
+
+    updating = np.zeros((WINDOWS, n_segments))
+    frozen = np.zeros((WINDOWS, n_segments))
+
+    for i, start in enumerate(starts):
+        tokens = dataset.val[start : start + TOKENS + 1].tolist()
+        print(f"\nwindow {i + 1}/{WINDOWS}: val[{start}:{start + TOKENS}]")
+
+        # two passes: normal vs frozen memory
+        loss_normal = run_pass(model, tokens, device, freeze_memory=False)
+        loss_frozen = run_pass(model, tokens, device, freeze_memory=True)
+
+        # average loss per segment
+        for s in range(n_segments):
+            lo, hi = s * SEGMENT, (s + 1) * SEGMENT
+            updating[i, s] = loss_normal[lo:hi].mean()
+            frozen[i, s] = loss_frozen[lo:hi].mean()
+
+        delta = loss_frozen.mean() - loss_normal.mean()
+        print(f"  updating={loss_normal.mean():.4f}  frozen={loss_frozen.mean():.4f}  delta={delta:+.4f}")
+
+    return {"updating": updating, "frozen": frozen}
+
+
+@torch.no_grad()
+def run_pass(model, tokens, device, freeze_memory=False):
+    """Run sequential inference, optionally freezing W after each step."""
+    N = len(tokens) - 1
+    losses = np.zeros(N)
+    states = None
+
+    for t in range(N):
+        token = torch.tensor([tokens[t]], device=device)
+        target = torch.tensor([tokens[t + 1]], device=device)
+
+        if freeze_memory and states is not None:
+            saved_W = [s["memory"]["W"].clone() for s in states]
+
+        logits, states = model.step(token, states=states)
+        states = [detach(s) for s in states]
+        losses[t] = F.cross_entropy(logits, target).item()
+
+        if freeze_memory and t > 0:
+            for i in range(len(states)):
+                states[i]["memory"]["W"] = saved_W[i]
+
+    return losses
 
 
 def detach(x):
@@ -30,170 +121,81 @@ def detach(x):
     return x
 
 
-def print_param_table(model):
-    print("\n=== Hebbian Memory Parameters ===")
-    print(f"{'Layer':>5}  {'σ(decay)':>9}  {'‖proj_w‖':>9}  {'‖proj_r‖':>9}")
-    print("-" * 39)
-    for i, layer in enumerate(model.layers):
-        if not layer.use_memory:
-            print(f"{i:>5}  (no memory)")
-            continue
-        gamma = torch.sigmoid(layer.decay).item()
-        pw = layer.proj_write.weight.data.norm().item()
-        pr = layer.proj_read.weight.data.norm().item()
-        print(f"{i:>5}  {gamma:>9.6f}  {pw:>9.4f}  {pr:>9.4f}")
-    print(f"\nFixed α = 0.03")
+def print_results(segment_losses):
+    updating = segment_losses["updating"]
+    frozen = segment_losses["frozen"]
+    deltas = frozen - updating
+    n_segments = updating.shape[1]
+
+    mean_updating = updating.mean(axis=0)
+    mean_frozen = frozen.mean(axis=0)
+    mean_delta = deltas.mean(axis=0)
+    stderr_delta = deltas.std(axis=0) / math.sqrt(WINDOWS)
+
+    overall_delta = deltas.mean()
+    overall_stderr = deltas.std() / math.sqrt(WINDOWS * n_segments)
+
+    print(f"\n=== Aggregated over {WINDOWS} windows ===")
+    print(
+        f"Overall: updating={updating.mean():.4f}  frozen={frozen.mean():.4f}  delta={overall_delta:+.4f} +/- {overall_stderr:.4f}"
+    )
+    print(
+        f"\n{'Segment':>12}  {'Updating':>10}  {'Frozen':>10}  {'Delta':>10}  {'Stderr':>8}"
+    )
+    print("-" * 56)
+    for seg_idx, seg_start in enumerate(range(0, TOKENS, SEGMENT)):
+        seg_end = min(seg_start + SEGMENT, TOKENS)
+        print(
+            f"{seg_start:>5}-{seg_end:<5}  {mean_updating[seg_idx]:>10.4f}  {mean_frozen[seg_idx]:>10.4f}  {mean_delta[seg_idx]:>+10.4f}  {stderr_delta[seg_idx]:>8.4f}"
+        )
 
 
-@torch.no_grad()
-def run_inference(model, tokens, device):
-    """Two passes: W updating (normal) vs W frozen (zero throughout).
-    For no-memory models, only runs one pass (both are identical)."""
-    N = len(tokens) - 1
-    L = len(model.layers)
-    has_memory = any(layer.use_memory for layer in model.layers)
+def plot_results(segment_losses, path):
+    updating = segment_losses["updating"].mean(axis=0)
+    frozen = segment_losses["frozen"].mean(axis=0)
+    segments = [f"{s}-{min(s + SEGMENT, TOKENS)}" for s in range(0, TOKENS, SEGMENT)]
 
-    w_norms = np.zeros((L, N))
-    loss_upd = np.zeros(N)
-
-    # Pass 1: normal — W accumulates across tokens
-    states = None
-    for t in range(N):
-        tok = torch.tensor([tokens[t]], device=device)
-        tgt = torch.tensor([tokens[t + 1]], device=device)
-        logits, states = model.step(tok, states=states)
-        states = [detach(s) for s in states]
-        loss_upd[t] = F.cross_entropy(logits, tgt).item()
-        if has_memory:
-            for i in range(L):
-                mem = states[i]["memory"]
-                w_norms[i, t] = mem.norm().item() if mem is not None else 0.0
-
-    if not has_memory:
-        return w_norms, loss_upd, loss_upd  # no W means both passes identical
-
-    # Pass 2: frozen — W restored to pre-step value each token
-    loss_frz = np.zeros(N)
-    states = None
-    for t in range(N):
-        tok = torch.tensor([tokens[t]], device=device)
-        tgt = torch.tensor([tokens[t + 1]], device=device)
-        if states is not None:
-            saved_W = [s["memory"].clone() for s in states]
-        logits, states = model.step(tok, states=states)
-        states = [detach(s) for s in states]
-        loss_frz[t] = F.cross_entropy(logits, tgt).item()
-        if t > 0:
-            for i in range(L):
-                states[i]["memory"] = saved_W[i]
-
-    return w_norms, loss_upd, loss_frz
-
-
-def plot_results(w_norms, loss_upd, loss_frz, path):
-    L, N = w_norms.shape
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-    boundaries = [b for b in range(512, N, 512)]
-
-    # W norms per layer
-    colors = plt.colormaps["viridis"](np.linspace(0, 1, L))
-    for i in range(L):
-        ax1.plot(w_norms[i], color=colors[i], alpha=0.7, label=f"layer {i}")
-    for b in boundaries:
-        ax1.axvline(b, color="red", ls="--", alpha=0.4,
-                     label="512-tok boundary" if b == boundaries[0] else None)
-    ax1.set(ylabel="‖W‖_F", title="W Frobenius Norm (W updating)")
-    ax1.legend(fontsize=7, ncol=4)
-    ax1.grid(True, alpha=0.3)
-
-    # Smoothed loss comparison
-    win = 50
-    if N >= win:
-        kernel = np.ones(win) / win
-        x = np.arange(win - 1, N)
-        ax2.plot(x, np.convolve(loss_upd, kernel, mode="valid"), label="W updating", alpha=0.8)
-        ax2.plot(x, np.convolve(loss_frz, kernel, mode="valid"), label="W frozen", alpha=0.8)
-    else:
-        ax2.plot(loss_upd, label="W updating", alpha=0.8)
-        ax2.plot(loss_frz, label="W frozen", alpha=0.8)
-    for b in boundaries:
-        ax2.axvline(b, color="red", ls="--", alpha=0.4)
-    ax2.set(xlabel="Token position", ylabel=f"CE Loss (smoothed, w={win})",
-            title="Per-Token Loss: W Updating vs W Frozen")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x = np.arange(len(segments))
+    ax.bar(x - 0.15, updating, 0.3, label="W updating", alpha=0.8)
+    ax.bar(x + 0.15, frozen, 0.3, label="W frozen", alpha=0.8)
+    ax.set(
+        xlabel="Segment", ylabel="CE Loss", title="Memory Contribution by Context Depth"
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(segments, rotation=45, ha="right")
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
 
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"Saved {path}")
+    print(f"saved {path}")
 
 
-def main():
-    import argparse
-    p = argparse.ArgumentParser()
-    p.add_argument("--tokens", type=int, default=4096)
-    p.add_argument("--windows", type=int, default=4)
-    p.add_argument("--model", type=str, default="checkpoints/model_memory.pt")
-    p.add_argument("--segment", type=int, default=512)
-    p.add_argument("--dataset", type=str, default="pg19", choices=["pg19", "the_stack"])
-    args = p.parse_args()
+def plot_memory_params(model, path):
+    layers = range(len(model.layers))
+    decays = [torch.sigmoid(l.memory.decay).mean().item() for l in model.layers]
+    alphas = [l.memory.log_alpha.exp().mean().item() for l in model.layers]
 
-    device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Device: {device}")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    ax1.bar(layers, decays, alpha=0.8)
+    ax1.set(
+        xlabel="Layer",
+        ylabel="Decay (gamma)",
+        title="Learned Decay per Layer",
+        ylim=(0, 1),
+    )
+    ax1.grid(True, alpha=0.3, axis="y")
 
-    model = load_model(args.model, device)
-    from data import load_dataset
-    ds = load_dataset(args.dataset)
+    ax2.bar(layers, alphas, alpha=0.8, color="tab:orange")
+    ax2.set(xlabel="Layer", ylabel="Alpha", title="Learned Alpha per Layer")
+    ax2.grid(True, alpha=0.3, axis="y")
 
-    print_param_table(model)
-
-    N = args.tokens
-    n_windows = args.windows
-    seg = args.segment
-    n_segs = (N + seg - 1) // seg
-
-    # Pick random non-overlapping windows from val
-    rng = np.random.default_rng(42)
-    max_start = len(ds.val) - N - 1
-    starts = sorted(rng.choice(max_start, size=n_windows, replace=False))
-
-    # Collect per-segment deltas across windows
-    all_seg_upd = np.zeros((n_windows, n_segs))
-    all_seg_frz = np.zeros((n_windows, n_segs))
-    last_w_norms, last_loss_upd, last_loss_frz = None, None, None
-
-    for w_i, start in enumerate(starts):
-        tokens = ds.val[start : start + N + 1].tolist()
-        print(f"\nWindow {w_i+1}/{n_windows}: val[{start}:{start+N}]")
-
-        w_norms, loss_upd, loss_frz = run_inference(model, tokens, device)
-        last_w_norms, last_loss_upd, last_loss_frz = w_norms, loss_upd, loss_frz
-
-        for si, s in enumerate(range(0, N, seg)):
-            e = min(s + seg, N)
-            all_seg_upd[w_i, si] = loss_upd[s:e].mean()
-            all_seg_frz[w_i, si] = loss_frz[s:e].mean()
-
-        avg_upd, avg_frz = loss_upd.mean(), loss_frz.mean()
-        print(f"  Avg loss: upd={avg_upd:.4f} frz={avg_frz:.4f} delta={avg_frz-avg_upd:+.4f}")
-
-    # Aggregate across windows
-    deltas = all_seg_frz - all_seg_upd
-    mean_upd = all_seg_upd.mean(axis=0)
-    mean_frz = all_seg_frz.mean(axis=0)
-    mean_delta = deltas.mean(axis=0)
-    stderr_delta = deltas.std(axis=0) / math.sqrt(n_windows)
-
-    print(f"\n=== Aggregated over {n_windows} windows ===")
-    print(f"Overall: upd={all_seg_upd.mean():.4f} frz={all_seg_frz.mean():.4f} delta={deltas.mean():+.4f} ± {deltas.std()/math.sqrt(n_windows*n_segs):.4f}")
-    print(f"\n{'Segment':>12}  {'Loss(upd)':>10}  {'Loss(frz)':>10}  {'Delta':>10}  {'±stderr':>8}")
-    print("-" * 56)
-    for si, s in enumerate(range(0, N, seg)):
-        e = min(s + seg, N)
-        print(f"{s:>5}-{e:<5}  {mean_upd[si]:>10.4f}  {mean_frz[si]:>10.4f}  {mean_delta[si]:>+10.4f}  {stderr_delta[si]:>8.4f}")
-
-    plot_results(last_w_norms, last_loss_upd, last_loss_frz, "eval_results/memory.png")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"saved {path}")
 
 
 if __name__ == "__main__":

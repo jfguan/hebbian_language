@@ -1,8 +1,12 @@
-# Hebbian Linear Models
+# Linear Hebbian Models
 
 Hebbian linear models are a minimal yet extremely effective linear architecture for general modeling.
 
-It's similar to other linear architectures like  Mamba and Gated Delta Net, but is much simpler - each layer is just a convolution, MLP, and memory block. The memory block which is an associative matrix - a fixed cost soft KV cache.
+It's similar to other linear architectures like  Mamba and Gated Delta Net, but is much simpler - each layer is:
+
+4 token convolution -> MLP -> memory block -> next layer
+
+The memory block which is an associative matrix - a fixed cost soft KV cache similar to Gated Delta Net but uses the full matrix instead of block diagonal with divided heads.
 
 There are a few very small but critical changes:
 1. The convolution + MLP is the main processor - the memory is additive with a residual skip.
@@ -45,30 +49,14 @@ However, M is fixed size, so continually adding v⊗k start to overlap. Instead 
 Every new token, we multiple M by decay (γ) so old keys fade and "make room" for new keys.
 
 # Linear Models Issues
-Fundementally, compared to full attention which retains all kv vectors crisply, linear attention compression can only approximate. The cost of faster speed is worse recall, which many hybrids like Jamba, Olmo Hybrid, Kimi Linear mitigate by using linear and full attention layers in a 3:1 ratio for example, to try and reduce the cost.
+Fundementally, compared to full attention which retains all kv vectors crisply, linear attention compression can only approximate. The cost of faster speed is worse recall, which many hybrids like Jamba, Olmo, Kimi Linear mitigate by full attention layers only every few layers.
 
+# Linear Hebbian Token Shift
+The hebbian matrix is very similar to the GDN matrix, except it uses a new token shift Opus 4.6 discovered, reducing parameter cost 12.5% - 25% per layer.
 
-# Convolutions are mostly what you need
-Mambaout showed for vision models, the SSM block doesn't contribute much and simple convolutions are most of the contribution.
-It makes sense for language also. If you stack 6 convolution + MLP layers and each conv has a width of 4 tokens, you actually have a 4 + (4-1) * 5 = 19 nonlinear token window
+Gated Delta Net creates the q/k/v vectors via projections for the memory matrix. However, during prediction, we're storing v⊗k, which is "symmetric". We're storing the key for the new predicted token with the "thinking state" together, which isn't very useful.
 
-If layer 1 has information on token t and past three tokens, layer 2 mixes t and past 6 tokens
-Layer 1: [t to t-3]
-Layer 2: [t to t-3, t-1 to t-4, t-2 to t-5, t-3 to t-6]
-...
-
-Simple convolutions work well because a lot language modeling is immediate local context, influenced by a few keywords in past context. Suspecting attention is overkill because perfect recall for filler words likely is clogging memory - tricks like attention sinks are needed to actively forget irrelelvant words.
-
-However, beyond immediate local context, you still need a mechanism for long term recall, which this model adds with the hebbian matrix.
-
-# Hebbian Linear Token Shift
-Originally, the hebbian memory matrix augmented Mamba to mitigate recall issues, stacking layers of MambaBlock -> HebbianBlock.
-
-Critically, this matrix uses a new token shift Opus 4.5 seredipitously discovered, which reduces parameter cost by 12.5% to 25% per layer.
-
-Linear architectures all create the q/k/v vectors via projections for the memory matrix. However, during prediction, we're storing v⊗k, which is "symmetric". We're storing the key for the new predicted token with the "thinking state" together, which isn't very useful.
-
-Going back to the example:
+In our example:
 The dog barked. The man saw the dog ____?
 
 A symmetric memory matrix contains the key value pairs of:
@@ -87,113 +75,55 @@ Predicting the final word, we use the previous token "dog" as the key, which las
 
 This skips the Q and K projections which is 12.5% of the layer parameters at MLP expand factor of 4, or 25% at expand factor of 2.
 
-I believe only Mamba 3 uses trapazoidal keys, and RWKV-7's lerp uses weighted averages but both still keep a form of the QK
+Similar models in literature include Mamba 3 with trapazoidal SSM, and RWKV-7's lerp token lerp.
 
+# Linear Hebbian Residual Skip
+In this architecture, memory is not the primary mechanism, but instead an augmentation to the convolution+MLP.
 
-## Results
-A full-rank $d \times d$ associative memory matrix augmenting each layer of a language model. The memory accumulates outer-product associations over the context at $O(Td^2)$ cost — linear in sequence length — and injects retrieved content into the residual stream via a skip connection.
+While Gated Delta Net's output which directly feeds into an MLP, the Linear Hebbian matrix adds a residual skip, so the convolution + MLP output can somewhat "ignore" the memory if desired. Furthermore, an alpha scalar controls memory influence "strength", which after training settles from .05 to .10. Despite only having a 10% influence per layer, across layers the nudges from memory influence the final prediction significantly.
 
-The architecture pairs a gated causal convolution (local token mixing) with the Hebbian memory (long-range associative binding) at every layer. No attention, no SSM — just conv + memory.
+# Results
+## 18M Scale Testing
+Disclaimer - all models are heavily undertrained, and limited windows, so noise variation could be significant. However, the nat gaps seem quite large and are at least indicative.
 
+We train a baselines Mamba and convolution models to compare against Linear Hebbian on a coding dataset, The Stack. Coding datasets help exaggerate recall differences since code is high density variable and function associations.
 
-Hebbian vs Mamba baseline (parameter-matched, same data, same training):
+We see that the convolution + MLP model performs .3 nats worse than Mamba, but Linear Hebbian performs almost ~.9 nats better than Mamba. 
 
-| Setting | Hebbian | Mamba | Gap |
-|---|---|---|---|
-| 18M, The Stack (10M tokens) | **1.73** | 2.66 | **+0.93** |
-| 18M, PG-19 (10M tokens) | **3.38** | 3.50 | **+0.12** |
+As we see on prose pg19, Linear Hebbian performs only ~.11 nats better, which makes sense, prose needs less recall.
 
-The gap widens over training — Hebbian improves faster than Mamba at every checkpoint. Code (The Stack) benefits more than prose (PG-19), likely because code has more repeated key-value patterns (variable names, function signatures, imports).
+## Convolutions are mostly all you need
+The MambaOut paper showed for vision models, the SSM doesn't contribute much and just convolutions can approximate it. Similar results in language, where a big part is predicting from immediate local context, influenced by keywords farther in the past.
 
-## Replication
+Stacking 6 convolution + MLP layers with conv width of 4 tokens, you actually have a 4 + (4-1) * 5 = 19 nonlinear local token window to work with.
+If layer 1 has information on token t and past 3 tokens, layer 2 mixes t and past 6 tokens
+Layer 1: [t to t-3]
+Layer 2: [t to t-3, t-1 to t-4, t-2 to t-5, t-3 to t-6]
+...
 
-### Setup
+I suspect attention is overkill - perfect recall for filler words likely is clogging memory that need to be "forgotten" with tricks like attention sinks.
 
-```bash
-uv sync
-```
+However, a mechanism for long term recall is still needed, which the hebbian matrix fills.
 
-Data is cached automatically on first run from HuggingFace.
+## Sanity Checks
+Let's also sanity check the hebbian matrix works. A synthetic task trains a small hebbian model to memorize key/value pairs and retrieve them, which it does. 
 
-### Synthetic recall sanity check
+After training, we can see the model has a natural memory capacity curve.
 
-Verifies that $W$ achieves near-perfect associative recall before training:
+We also freeze the memory matrix to see if it's critical - without it, performance drops dramatically.
 
-```bash
-uv run eval_recall/eval_recall.py
-```
+## 100M Scale Testing
+Scaling up to 100M, again we show that hebbian maintains a sigifnicant nat improvement around ~.5 over baseline Mamba, theorized just due to larger state to store memory in.
 
-### 18M prose (PG-19)
+In addition, we create a new layer type delta hebbian, which is just hebbian with the delta rule. It's very close to Gated Delta Net, and splits the matrix block diagonally with heads for hardware efficiency. Placing a few delta hebbian layers at the end of the model further improves performance, theorizing they play a role similar to full attention layers in hybrid models like Olmo. The delta rule allows erasing values before rewriting, allowing cleaner key writes as well as preserving keys indefinitely for critical long term keywords.
 
-```bash
-# Memory model
-uv run train.py --dataset pg19
+## TODO - train multihead attention and GDN as well
 
-# Wide baseline (~17.4M, d=576)
-uv run train.py --dataset pg19 --no-memory --d-model 576
+## TODO
 
-# Deep baseline (~17.2M, 10 layers)
-uv run train.py --dataset pg19 --no-memory --n-layers 10
-```
+## Generalization Testing
+To test that the architecture generalizes, we use Karpathy's nano-gpt setup, training a 124M model on fineweb-edu data for 10B tokens. With no tuning we see validation loss is ~.10 worse than the GPT-2.
 
-### 18M code (codeparrot)
-
-```bash
-uv run train.py --dataset code
-uv run train.py --dataset code --no-memory --d-model 576
-uv run train.py --dataset code --no-memory --n-layers 10
-```
-
-### 100M code (codeparrot)
-
-```bash
-uv run train_100M.py --dataset code
-uv run train_100M.py --dataset code --no-memory
-```
-
-### 100M multilingual (The Stack)
-
-```bash
-uv run train_stack100M.py
-uv run train_stack100M.py --no-memory
-```
-
-### Evaluation
-
-**W ablation** (updating vs frozen $W$, confirms gains come from $W$ not extra params):
-
-```bash
-uv run eval_memory/eval_memory.py --model checkpoints/model_code_memory.pt --dataset code --tokens 16384 --windows 8
-```
-
-**Long-context eval** (per-segment loss up to 16K tokens):
-
-```bash
-# Run from repo root
-uv run eval_long/eval_long.py \
-  --models checkpoints/model_code_memory.pt checkpoints/model_code_deep.pt \
-  --dataset code --tokens 16384 --windows 8 \
-  --out eval_long/my_eval.txt
-```
-
-**Compile paper:**
-
-```bash
-/usr/local/texlive/2025/bin/universal-darwin/pdflatex \
-  -output-directory=paper paper/paper.tex
-```
-
-## Architecture
-
-Each Mamba layer is augmented with:
-
-```
-W_t = γ · W_{t-1} + proj_write(r_{t-1}) ⊗ proj_write(r_{t-1})ᵀ   # write
-read_t = W_t · proj_read(r_t)                                        # read
-r_t ← r_t + α · proj_read(read_t)                                   # inject
-```
-
-where `r_t` is the post-Mamba residual, `γ = σ(decay)` is a learned per-layer scalar, and `α = 0.03` is fixed. Two key design choices: (1) separate write/read projections — necessary for correct retrieval after Mamba state resets; (2) fixed `α` — prevents memory noise from destabilizing early training.
 
 ## Experiments (March 2026)
 
