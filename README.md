@@ -53,7 +53,7 @@ Every new token, we multiple M by decay (γ) so old keys fade and "make room" fo
 Fundementally, compared to full attention which retains all kv vectors crisply, linear attention compression can only approximate. The cost of faster speed is worse recall, which many hybrids like Jamba, Olmo, Kimi Linear mitigate by full attention layers only every few layers.
 
 # Linear Hebbian Token Shift
-The hebbian matrix is very similar to the GDN matrix, except it uses a new token shift Opus 4.6 discovered, reducing parameter cost 12.5% - 25% per layer.
+The hebbian matrix is very similar to the GDN matrix, except it uses a new token shift Opus 4.6 discovered, reducing parameter cost 12.5% (expand 4) to 25% per layer (expand 2)
 
 Gated Delta Net creates the q/k/v vectors via projections for the memory matrix. However, during prediction, we're storing v⊗k, which is "symmetric". We're storing the key for the new predicted token with the "thinking state" together, which isn't very useful.
 
@@ -107,7 +107,7 @@ I suspect attention is overkill - perfect recall for filler words likely is clog
 However, a mechanism for long term recall is still needed, which the hebbian matrix fills.
 
 ## Sanity Checks
-Let's also sanity check the hebbian matrix works. A synthetic task trains a small hebbian model to memorize key/value pairs and retrieve them, which it does. 
+Let's first sanity check the hebbian matrix works. A synthetic task trains a small hebbian model to memorize key/value pairs and retrieve them, which it does. 
 
 After training, we can see the model has a natural memory capacity curve.
 
@@ -126,22 +126,23 @@ In addition, we create a new layer type delta hebbian, which is just hebbian wit
 To test that the architecture generalizes, we use Karpathy's nano-gpt setup, training a 124M model on fineweb-edu data for 10B tokens. With no tuning we see validation loss is ~.10 worse than the GPT-2.
 
 
-## My Persoanl Linear Crusade
-Disrupting quadratic multi-head attention with linear approximations seems doomed, but the bitter lesson gives hope:
-1. Learned approximations approach the real patterns
-2. Linear complexity best utilizes compute, critical as rollouts extend and image/video require much longer context.
+## Full Attention is a tempting local minimum
+Many challengers to Tranformers have tried and "failed", but the bitter lesson points toward linear architectures:
+1. Learned designs beat human designed at scale. Attention sinks, strided, sliding, etc. are designed compression to managed cost. For strided attention, why every 4th token? For sliding window, what if the important token slides right outside the window?  Global layers plug some gaps but you can tell the models are referencing something they shouldn't be.
+2. Linear complexity best utilizes compute. We're already hitting limits at 1M tokens, and image/video scales even worse. Hybrid models that patch the recall issue with full attention is still a smaller quadratic.
+1. The whole point of deep learning is learned approximations eventually approach exact at scale.
 
-Additionally, linear mechanisms look worse than they are:
+Emphasis on scale, we can't see out of the local minimum that recall might not be as imporant as we think it is.
 
-1. benchmarks effectively disallow rereading, making a very unnatural test setting that biases hard for recall. 
-Full attention can read and remember the question, context, and answer choices clearly. Great!
-Linear attention can't keep everything in memory, but humans don't read questions once then shoot from the hip - we re-read whatever we need.
+It’s quite hard to invest in linear architectures when all benchmarks suggests they are strictly worse, but benchmark design is biased:
+1. Benchmarks effectively disallow rereading, a very unnatural test setting that biases hard for recall. 
+Full attention remembers the question/context/answer choices clearly. Great!
+Linear attnetion forgets, but humans don't read once then shoot from the hip - we re-read whatever we need.
+2. Short context testing uses full attention, but real architectures use sliding window.
+3. Recall and needle in a haystack are misleading metrics. Perfect recall can be mitigated if the model can externalize thought storage via notes.
+
 A fair comparison requires agentic models that actionably re-request information, like how humans can ask “what was the question again?”. Unfortunately, agentic scale requires a lot of investment.
-2. short context training biases toward full attention, but real architectures use sliding window to manage cost
-3. Recall and needle in a haystack are misleading metrics. We don't want perfect recall,  we want fluid lookup capabilities augmented by note taking.
 
-It’s hard to invest in linear architectures when all benchmarks suggests they are strictly worse.
+Fundementally, recall and runtime complexity are in tension. Good recall naturally requires more state, but more state is costly.
 
-First, attention sinks, strided, sliding, etc. are methods of compression. For strided attention, why every 4th token? For sliding window, what if the important token slides right outside the window?  We hope global layers plug the gaps, but the bitter lesson emphasizes learning compression over designing it.
 
-Second, hybrid models patch the recall issue with full attention, but the runtime is still a smaller quadratic. Again, at scale the better linear complexity should win. We have too much information to process - we’re struggling at 1M tokens on language already and we’ve barely started video/image with heavy downscaling.

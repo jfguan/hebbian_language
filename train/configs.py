@@ -120,7 +120,7 @@ HYBRID_100M = ModelConfig(
     chunk_size=64,
     num_heads=1,
     delta_num_heads=8,
-    delta_layers=[0, 1, 2, 4, 5, 7, 8, 10, 11],  # regular hebbian at 2, 6, 10
+    delta_layers=[0, 1, 2, 4, 5, 7, 8, 10, 11],  # regular hebbian at 3, 9
 )
 
 GDN_18M = ModelConfig(
