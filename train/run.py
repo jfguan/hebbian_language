@@ -4,7 +4,6 @@ Usage:
     uv run train/run.py hebbian_18M train_stack_18M
     uv run train/run.py delta_hebbian_18M train_stack_18M
     uv run train/run.py gdn_18M train_stack_18M
-    uv run train/run.py mamba_18M train_stack_18M
 """
 
 import argparse
@@ -22,15 +21,15 @@ import train.configs as C
 
 MODELS = {
     "hebbian_18M": C.HEBBIAN_18M,
-    "hebbian_100M": C.HEBBIAN_100M,
     "delta_hebbian_18M": C.DELTA_HEBBIAN_18M,
     "delta_hebbian_100M": C.DELTA_HEBBIAN_100M,
-    "hybrid_100M": C.HYBRID_100M,
-    "conv_only_18M": C.CONV_ONLY_18M,
+    "dual_delta_18M": C.DUAL_DELTA_18M,
+    "dual_delta_100M": C.DUAL_DELTA_100M,
+    "swa_delta_18M": C.SWA_DELTA_18M,
+    "swa_delta_100M": C.SWA_DELTA_100M,
+    "mamba_18M": C.MAMBA_18M,
     "gdn_18M": C.GDN_18M,
     "gdn_100M": C.GDN_100M,
-    "mamba_18M": C.MAMBA_18M,
-    "mamba_100M": C.MAMBA_100M,
 }
 
 TRAINS = {
@@ -77,9 +76,16 @@ def main():
     def log(step, train_loss, step_ms, val_loss=None):
         tokens = step * tokens_per_step
         val_str = f" | val {val_loss:.4f}" if val_loss is not None else ""
-        print(f"step {step} | loss {train_loss:.4f}{val_str} | {tokens / 1e6:.1f}M tok | {step_ms:.0f}ms")
+        print(
+            f"step {step} | loss {train_loss:.4f}{val_str} | {tokens / 1e6:.1f}M tok | {step_ms:.0f}ms"
+        )
 
-        entry = {"step": step, "train_loss": round(train_loss, 4), "tokens": tokens, "step_ms": round(step_ms, 2)}
+        entry = {
+            "step": step,
+            "train_loss": round(train_loss, 4),
+            "tokens": tokens,
+            "step_ms": round(step_ms, 2),
+        }
         if val_loss is not None:
             entry["val_loss"] = round(val_loss, 4)
         with open(log_path, "a") as f:
@@ -134,7 +140,7 @@ def main():
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 
-        last_step = step == train_config.steps
+        last_step = step == end_step
 
         # eval
         eval_step = step % train_config.eval_interval == 0 or last_step

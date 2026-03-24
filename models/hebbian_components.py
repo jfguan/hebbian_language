@@ -55,6 +55,74 @@ class GatedMLP(nn.Module):
         return self.out_proj(F.silu(val) * F.silu(self.gate(x)))
 
 
+class SlidingWindowAttention(nn.Module):
+    """Local attention with token-shifted keys. No Q/K projections.
+
+    Query = current hidden state, Key = previous token's hidden state.
+    Exact content-addressed retrieval within a fixed window.
+    """
+
+    def __init__(self, d_model: int, num_heads: int = 8, window_size: int = 256):
+        super().__init__()
+        assert d_model % num_heads == 0
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        self.window_size = window_size
+        self.proj_v = nn.Linear(d_model, d_model, bias=False)
+        self.gate_proj = nn.Linear(d_model, num_heads, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+    def forward(self, x):
+        """x: (B, T, D). returns: (B, T, D)."""
+        B, T, D = x.shape
+        H, d = self.num_heads, self.head_dim
+
+        # token shift: key is previous position, split into heads
+        q = x.view(B, T, H, d).transpose(1, 2)                # (B, H, T, d)
+        k = F.pad(x[:, :-1], (0, 0, 1, 0)).view(B, T, H, d).transpose(1, 2)
+        v = self.proj_v(x).view(B, T, H, d).transpose(1, 2)
+        gate = self.gate_proj(x).sigmoid().view(B, T, H, 1)   # (B, T, H, 1)
+
+        # SDPA handles causal masking and flash attention kernel automatically
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # (B, H, T, d)
+        out = out.transpose(1, 2) * gate                       # (B, T, H, d)
+        return self.out_proj(out.reshape(B, T, D))
+
+    def step(self, x, state=None):
+        """x: (B, D). returns: (B, D), new state."""
+        B, D = x.shape
+        W = self.window_size
+
+        if state is None:
+            state = {"keys": x.new_zeros(B, 0, D), "vals": x.new_zeros(B, 0, D)}
+
+        # append current token as key and value for future positions
+        k_prev = F.pad(state["keys"][:, -1:], (0, 0, 0, 0)) if state["keys"].shape[1] > 0 else x.new_zeros(B, 1, D)
+        keys = torch.cat([state["keys"], k_prev], dim=1)[:, -W:]
+        vals = torch.cat([state["vals"], self.proj_v(x).unsqueeze(1)], dim=1)[:, -W:]
+
+        # attend: query is current x, keys are previous positions
+        H, hd = self.num_heads, self.head_dim
+        gate = self.gate_proj(x).sigmoid().view(B, H, 1)  # (B, H, 1)
+        if keys.shape[1] > 0:
+            scale = hd ** -0.5
+            # reshape to multi-head for attention
+            q = x.view(B, H, hd)                                      # (B, H, hd)
+            k_mh = keys.view(B, -1, H, hd).transpose(1, 2)           # (B, H, K, hd)
+            v_mh = vals.view(B, -1, H, hd).transpose(1, 2)           # (B, H, K, hd)
+            scores = (q.unsqueeze(2) @ k_mh.transpose(-1, -2)).squeeze(2) * scale  # (B, H, K)
+            attn = F.softmax(scores, dim=-1)
+            out = (attn.unsqueeze(-1) * v_mh).sum(2) * gate           # (B, H, hd)
+            out = self.out_proj(out.reshape(B, D))
+        else:
+            out = x.new_zeros(B, D)
+
+        new_state = {"keys": torch.cat([state["keys"], x.unsqueeze(1)], dim=1)[:, -W:],
+                     "vals": vals}
+        return out, new_state
+
+
 class HebbianBlock(nn.Module):
     """Associative memory with data-dependent decay, write gate, and output gate.
 
@@ -85,7 +153,7 @@ class HebbianBlock(nn.Module):
         dt = dt.exp()
         self.dt_bias = nn.Parameter(dt + torch.log(-torch.expm1(-dt)))
         self.dt_bias._no_weight_decay = True
-        self.A_log = nn.Parameter(torch.empty(H).uniform_(0, 16).log())
+        self.A_log = nn.Parameter(torch.empty(H).uniform_(0, 4).log())
         self.A_log._no_weight_decay = True
 
     def forward(self, out):
@@ -230,7 +298,7 @@ class DeltaHebbianBlock(nn.Module):
         dt = dt.exp()
         self.dt_bias = nn.Parameter(dt + torch.log(-torch.expm1(-dt)))
         self.dt_bias._no_weight_decay = True
-        self.A_log = nn.Parameter(torch.empty(self.n_heads).uniform_(0, 16).log())
+        self.A_log = nn.Parameter(torch.empty(self.n_heads).uniform_(0, 4).log())
         self.A_log._no_weight_decay = True
 
         # static masks

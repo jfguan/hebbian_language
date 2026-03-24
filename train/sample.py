@@ -1,9 +1,9 @@
 """Generate samples from a trained model checkpoint.
 
 Usage:
-    uv run train/sample.py checkpoints/model_pg19_mamba.pt
-    uv run train/sample.py checkpoints/model_pg19_mamba.pt --prompt "def binary_search("
-    uv run train/sample.py checkpoints/model_pg19_mamba.pt --n 500 --temp 0.9
+    uv run train/sample.py checkpoints/hebbian_18M_the_stack.pt
+    uv run train/sample.py checkpoints/hebbian_18M_the_stack.pt --prompt "def binary_search("
+    uv run train/sample.py checkpoints/hebbian_18M_the_stack.pt --n 500 --temp 0.9
 """
 
 import argparse

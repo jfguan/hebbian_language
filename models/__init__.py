@@ -8,9 +8,12 @@ def build_model(model_config: ModelConfig):
     elif model_config.model == ModelType.DELTA_HEBBIAN:
         from .delta_hebbian import DeltaHebbianConv
         return DeltaHebbianConv(model_config)
-    elif model_config.model == ModelType.CONV_ONLY:
-        from .conv_only import ConvOnly
-        return ConvOnly(model_config)
+    elif model_config.model == ModelType.DUAL_DELTA:
+        from .dual_delta import DualDelta
+        return DualDelta(model_config)
+    elif model_config.model == ModelType.SWA_DELTA:
+        from .swa_delta import SWADelta
+        return SWADelta(model_config)
     elif model_config.model == ModelType.MAMBA:
         from .mamba import Mamba
         return Mamba(model_config)
