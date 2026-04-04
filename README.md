@@ -32,8 +32,8 @@ After calculating relevance scores, normalized by softmax, we get a weighted ave
 # Linear Attention Quick Review
 Because attention requires keeping all previous k, v vectors, cost grows with sequence length. Linear attention circumvents this with a fixed-size state instead.
 
-pros: no growing memory/compute costs.
-cons: no free lunch. Compression is inherently lossy and recall is worse.
+* pros: no growing memory/compute costs.
+* cons: no free lunch. Compression is inherently lossy and recall is worse.
 
 Explanation:
 With two k, v vectors, first take the outer product v⊗k, written also as (v · k^T).
@@ -61,11 +61,11 @@ Going back to our example:
 | **value** | v_0 | v_1 | v_2 | v_3 | v_4 | v_5 | v_6 | v_7 | |
 
 In terms of key/value pairs:
-The -> dog
-dog -> barked
-barked. -> The
-The -> man
-man -> saw
+1. The -> dog
+2. dog -> barked
+3. barked. -> The
+4. The -> man
+5. man -> saw
 ...
 
 To predict the blank, our hidden state x_7 is "dog", similar to x_1, which strengthens the v_2 representation for "barked".
