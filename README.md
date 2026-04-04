@@ -86,7 +86,7 @@ It seems that the raw hidden states serve these responsibilities well enough or 
 Disclaimer — all models are decently undertrained. Curves are fit on the last 80% of training to avoid too much early training influence. Sequence length is 2048, vocab of 1024.
 
 ## 18M Scale Testing
-We train a baseline 17.9M parameter Gated Delta Net and 14.7M Shifted Key Gated Delta Net models for 30M tokens, batch size 4, sequence length 2048 on coding examples (The Stack). Layers and model dimensions are the same besides removing QK.
+We train a baseline 17.9M parameter Gated Delta Net and 14.7M Shifted Key Gated Delta Net models for 30M tokens, batch size 4 on coding examples (The Stack). Layers and model dimensions are the same besides removing QK.
 
 For the training losses with smoothed data points, we see the token shift performs better despite having fewer parameters and less expressiveness.
 
